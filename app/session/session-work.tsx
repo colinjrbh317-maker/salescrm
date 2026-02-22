@@ -205,13 +205,26 @@ export default function SessionWork({
         onSkip={handleSkip}
       />
 
-      {/* End session early */}
-      <div className="flex justify-center pt-2">
+      {/* End session */}
+      <div className="flex justify-center pt-4 pb-8">
         <button
           onClick={endSession}
-          className="text-xs text-slate-500 transition hover:text-slate-300"
+          className="flex items-center gap-2 rounded-lg border border-red-700/50 bg-red-900/20 px-5 py-2.5 text-sm font-medium text-red-400 transition hover:bg-red-900/40 hover:text-red-300"
         >
-          End Session Early
+          <svg
+            className="h-4 w-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth={1.5}
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M5.25 7.5A2.25 2.25 0 0 1 7.5 5.25h9a2.25 2.25 0 0 1 2.25 2.25v9a2.25 2.25 0 0 1-2.25 2.25h-9a2.25 2.25 0 0 1-2.25-2.25v-9Z"
+            />
+          </svg>
+          End Session
         </button>
       </div>
     </div>

@@ -9,13 +9,16 @@ import { RenderedBlock } from "@/app/_components/rendered-block";
 interface SessionScriptDisplayProps {
   scriptContent: string | null;
   lead: Lead;
+  open: boolean;
+  onClose: () => void;
 }
 
 export default function SessionScriptDisplay({
   scriptContent,
   lead,
+  open,
+  onClose,
 }: SessionScriptDisplayProps) {
-  const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const merged = useMemo(() => {
@@ -26,8 +29,6 @@ export default function SessionScriptDisplay({
   if (!scriptContent || !merged) return null;
 
   const blocks = parseMarkdownBlocks(merged.text);
-  const previewLines = merged.text.split("\n").slice(0, 2).join("\n");
-  const previewBlocks = parseMarkdownBlocks(previewLines);
 
   function handleCopy() {
     navigator.clipboard.writeText(merged!.text);
@@ -36,48 +37,62 @@ export default function SessionScriptDisplay({
   }
 
   return (
-    <div className="rounded-lg border border-slate-700 bg-slate-800 p-4">
-      <div className="flex items-center justify-between">
-        <h4 className="text-sm font-semibold text-slate-300">Script</h4>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleCopy}
-            className="rounded bg-slate-700 px-2 py-1 text-xs text-slate-300 transition hover:bg-slate-600"
-          >
-            {copied ? "Copied" : "Copy"}
-          </button>
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="rounded bg-slate-700 px-2 py-1 text-xs text-slate-300 transition hover:bg-slate-600"
-          >
-            {expanded ? "Collapse" : "Expand"}
-          </button>
-        </div>
-      </div>
-
-      <div className="mt-3 space-y-2">
-        {expanded
-          ? blocks.map((block, i) => <RenderedBlock key={i} block={block} />)
-          : previewBlocks.map((block, i) => (
-              <RenderedBlock key={i} block={block} />
-            ))}
-        {!expanded && blocks.length > previewBlocks.length && (
-          <p className="text-xs text-slate-500">... click Expand to see more</p>
-        )}
-      </div>
-
-      {merged.unresolvedFields.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1">
-          {merged.unresolvedFields.map((f) => (
-            <span
-              key={f}
-              className="rounded bg-amber-600/20 px-1.5 py-0.5 text-xs text-amber-400 border border-amber-500/30"
-            >
-              {`{{${f}}}`} missing
-            </span>
-          ))}
-        </div>
+    <>
+      {/* Backdrop */}
+      {open && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50"
+          onClick={onClose}
+        />
       )}
-    </div>
+
+      {/* Slide-over panel */}
+      <div
+        className={`fixed right-0 top-0 z-50 h-full w-full max-w-md transform border-l border-slate-700 bg-slate-900 transition-transform duration-300 ${
+          open ? "translate-x-0" : "translate-x-full"
+        }`}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-700 px-5 py-4">
+          <h3 className="text-base font-semibold text-white">Script</h3>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleCopy}
+              className="rounded bg-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-slate-600"
+            >
+              {copied ? "Copied!" : "Copy All"}
+            </button>
+            <button
+              onClick={onClose}
+              className="rounded p-1.5 text-slate-400 transition hover:bg-slate-700 hover:text-white"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="overflow-y-auto p-5 space-y-3" style={{ height: "calc(100% - 65px)" }}>
+          {blocks.map((block, i) => (
+            <RenderedBlock key={i} block={block} />
+          ))}
+
+          {merged.unresolvedFields.length > 0 && (
+            <div className="mt-4 flex flex-wrap gap-1">
+              {merged.unresolvedFields.map((f) => (
+                <span
+                  key={f}
+                  className="rounded bg-amber-600/20 px-1.5 py-0.5 text-xs text-amber-400 border border-amber-500/30"
+                >
+                  {`{{${f}}}`} missing
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
   );
 }

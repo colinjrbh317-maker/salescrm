@@ -17,7 +17,7 @@ export default function SessionMissingData({
             key={w.field}
             className="inline-flex items-center rounded bg-amber-600/20 px-2 py-0.5 text-xs font-medium text-amber-400 border border-amber-500/30"
           >
-            \u26A0 {w.label}
+            {"⚠"} {w.label}
           </span>
         ))}
       </div>
