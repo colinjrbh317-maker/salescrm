@@ -1,9 +1,13 @@
 "use client";
 
-import React, { useState, useCallback, Fragment, type ReactElement } from "react";
+import React, { useState, useCallback } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import type { Script, ScriptComment } from "./page";
+import { ScriptEditor } from "./script-editor";
+import type { Block } from "@/lib/markdown-renderer";
+import { parseMarkdownBlocks, renderInlineMarkdown } from "@/lib/markdown-renderer";
+import { RenderedBlock } from "@/app/_components/rendered-block";
 
 // ============================================================
 // Types
@@ -13,349 +17,6 @@ interface ScriptViewerProps {
   script: Script;
   comments: ScriptComment[];
   categoryLabel: string;
-}
-
-// ============================================================
-// Simple Markdown Renderer (no external deps)
-// ============================================================
-
-function renderInlineMarkdown(text: string): React.ReactNode[] {
-  const elements: React.ReactNode[] = [];
-  let remaining = text;
-  let keyIdx = 0;
-
-  while (remaining.length > 0) {
-    // Find the earliest match among our inline patterns
-    const patterns: {
-      regex: RegExp;
-      render: (match: RegExpMatchArray) => ReactElement;
-    }[] = [
-      {
-        // {{FIELD}} merge fields
-        regex: /\{\{([^}]+)\}\}/,
-        render: (m) => (
-          <span
-            key={`mf-${keyIdx++}`}
-            className="rounded bg-amber-600/20 px-1.5 py-0.5 text-amber-400 font-mono text-sm border border-amber-500/30"
-          >
-            {`{{${m[1]}}}`}
-          </span>
-        ),
-      },
-      {
-        // `inline code`
-        regex: /`([^`]+)`/,
-        render: (m) => (
-          <code
-            key={`ic-${keyIdx++}`}
-            className="rounded bg-slate-700 px-1.5 py-0.5 text-sm text-emerald-400 font-mono"
-          >
-            {m[1]}
-          </code>
-        ),
-      },
-      {
-        // **bold**
-        regex: /\*\*([^*]+)\*\*/,
-        render: (m) => (
-          <strong key={`b-${keyIdx++}`} className="font-semibold text-white">
-            {m[1]}
-          </strong>
-        ),
-      },
-      {
-        // *italic*
-        regex: /\*([^*]+)\*/,
-        render: (m) => (
-          <em key={`i-${keyIdx++}`} className="italic text-slate-300">
-            {m[1]}
-          </em>
-        ),
-      },
-    ];
-
-    let earliestIndex = remaining.length;
-    let earliestPattern: (typeof patterns)[0] | null = null;
-    let earliestMatch: RegExpMatchArray | null = null;
-
-    for (const pat of patterns) {
-      const match = remaining.match(pat.regex);
-      if (match && match.index !== undefined && match.index < earliestIndex) {
-        earliestIndex = match.index;
-        earliestPattern = pat;
-        earliestMatch = match;
-      }
-    }
-
-    if (!earliestPattern || !earliestMatch || earliestMatch.index === undefined) {
-      // No more inline patterns, push the rest as text
-      elements.push(remaining);
-      break;
-    }
-
-    // Push text before the match
-    if (earliestIndex > 0) {
-      elements.push(remaining.slice(0, earliestIndex));
-    }
-
-    // Push the rendered element
-    elements.push(earliestPattern.render(earliestMatch));
-
-    // Advance past the match
-    remaining = remaining.slice(earliestIndex + earliestMatch[0].length);
-  }
-
-  return elements;
-}
-
-type Block =
-  | { type: "heading"; level: number; text: string }
-  | { type: "paragraph"; text: string }
-  | { type: "blockquote"; lines: string[] }
-  | { type: "unordered-list"; items: string[] }
-  | { type: "ordered-list"; items: string[] }
-  | { type: "code-block"; language: string; lines: string[] }
-  | { type: "table"; headers: string[]; rows: string[][] }
-  | { type: "hr" };
-
-function parseMarkdownBlocks(content: string): Block[] {
-  const blocks: Block[] = [];
-  const lines = content.split("\n");
-  let i = 0;
-
-  while (i < lines.length) {
-    const line = lines[i];
-
-    // Skip empty lines
-    if (line.trim() === "") {
-      i++;
-      continue;
-    }
-
-    // Horizontal rule
-    if (/^(-{3,}|\*{3,}|_{3,})$/.test(line.trim())) {
-      blocks.push({ type: "hr" });
-      i++;
-      continue;
-    }
-
-    // Code block (fenced)
-    if (line.trim().startsWith("```")) {
-      const language = line.trim().slice(3).trim();
-      const codeLines: string[] = [];
-      i++;
-      while (i < lines.length && !lines[i].trim().startsWith("```")) {
-        codeLines.push(lines[i]);
-        i++;
-      }
-      blocks.push({ type: "code-block", language, lines: codeLines });
-      i++; // skip closing ```
-      continue;
-    }
-
-    // Heading
-    const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
-    if (headingMatch) {
-      blocks.push({
-        type: "heading",
-        level: headingMatch[1].length,
-        text: headingMatch[2],
-      });
-      i++;
-      continue;
-    }
-
-    // Blockquote
-    if (line.startsWith("> ")) {
-      const quoteLines: string[] = [];
-      while (i < lines.length && lines[i].startsWith("> ")) {
-        quoteLines.push(lines[i].slice(2));
-        i++;
-      }
-      blocks.push({ type: "blockquote", lines: quoteLines });
-      continue;
-    }
-
-    // Table (lines starting with |)
-    if (line.trim().startsWith("|") && line.trim().endsWith("|")) {
-      const tableLines: string[] = [];
-      while (
-        i < lines.length &&
-        lines[i].trim().startsWith("|") &&
-        lines[i].trim().endsWith("|")
-      ) {
-        tableLines.push(lines[i]);
-        i++;
-      }
-      // Parse table: first row = headers, skip separator row, rest = data
-      const parseRow = (row: string) =>
-        row
-          .split("|")
-          .slice(1, -1)
-          .map((cell) => cell.trim());
-
-      const headers = tableLines.length > 0 ? parseRow(tableLines[0]) : [];
-      const isSeparator = (row: string) =>
-        /^\|[\s-:|]+\|$/.test(row.trim());
-
-      const dataLines = tableLines
-        .slice(1)
-        .filter((row) => !isSeparator(row));
-      const rows = dataLines.map(parseRow);
-      blocks.push({ type: "table", headers, rows });
-      continue;
-    }
-
-    // Unordered list
-    if (/^[-*]\s+/.test(line)) {
-      const items: string[] = [];
-      while (i < lines.length && /^[-*]\s+/.test(lines[i])) {
-        items.push(lines[i].replace(/^[-*]\s+/, ""));
-        i++;
-      }
-      blocks.push({ type: "unordered-list", items });
-      continue;
-    }
-
-    // Ordered list
-    if (/^\d+\.\s+/.test(line)) {
-      const items: string[] = [];
-      while (i < lines.length && /^\d+\.\s+/.test(lines[i])) {
-        items.push(lines[i].replace(/^\d+\.\s+/, ""));
-        i++;
-      }
-      blocks.push({ type: "ordered-list", items });
-      continue;
-    }
-
-    // Regular paragraph - collect consecutive non-empty, non-special lines
-    const paraLines: string[] = [];
-    while (
-      i < lines.length &&
-      lines[i].trim() !== "" &&
-      !lines[i].trim().startsWith("```") &&
-      !lines[i].match(/^#{1,6}\s+/) &&
-      !lines[i].startsWith("> ") &&
-      !/^[-*]\s+/.test(lines[i]) &&
-      !/^\d+\.\s+/.test(lines[i]) &&
-      !(lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|")) &&
-      !/^(-{3,}|\*{3,}|_{3,})$/.test(lines[i].trim())
-    ) {
-      paraLines.push(lines[i]);
-      i++;
-    }
-    if (paraLines.length > 0) {
-      blocks.push({ type: "paragraph", text: paraLines.join("\n") });
-    }
-  }
-
-  return blocks;
-}
-
-function RenderedBlock({ block }: { block: Block }) {
-  switch (block.type) {
-    case "heading": {
-      const sizeClass =
-        block.level === 1
-          ? "text-2xl font-bold text-white mt-6 mb-3"
-          : block.level === 2
-          ? "text-xl font-semibold text-white mt-5 mb-2"
-          : "text-lg font-medium text-white mt-4 mb-2";
-      const children = renderInlineMarkdown(block.text);
-      if (block.level === 1) return <h1 className={sizeClass}>{children}</h1>;
-      if (block.level === 2) return <h2 className={sizeClass}>{children}</h2>;
-      if (block.level === 3) return <h3 className={sizeClass}>{children}</h3>;
-      if (block.level === 4) return <h4 className={sizeClass}>{children}</h4>;
-      if (block.level === 5) return <h5 className={sizeClass}>{children}</h5>;
-      return <h6 className={sizeClass}>{children}</h6>;
-    }
-
-    case "paragraph":
-      return (
-        <p className="text-slate-300 leading-relaxed">
-          {renderInlineMarkdown(block.text)}
-        </p>
-      );
-
-    case "blockquote":
-      return (
-        <blockquote className="border-l-4 border-blue-500/50 pl-4 py-1 my-2">
-          {block.lines.map((line, i) => (
-            <p key={i} className="text-slate-400 italic leading-relaxed">
-              {renderInlineMarkdown(line)}
-            </p>
-          ))}
-        </blockquote>
-      );
-
-    case "unordered-list":
-      return (
-        <ul className="list-disc list-inside space-y-1 text-slate-300 ml-2">
-          {block.items.map((item, i) => (
-            <li key={i} className="leading-relaxed">
-              {renderInlineMarkdown(item)}
-            </li>
-          ))}
-        </ul>
-      );
-
-    case "ordered-list":
-      return (
-        <ol className="list-decimal list-inside space-y-1 text-slate-300 ml-2">
-          {block.items.map((item, i) => (
-            <li key={i} className="leading-relaxed">
-              {renderInlineMarkdown(item)}
-            </li>
-          ))}
-        </ol>
-      );
-
-    case "code-block":
-      return (
-        <pre className="rounded-lg bg-slate-950 border border-slate-700 p-4 overflow-x-auto my-2">
-          <code className="text-sm text-emerald-400 font-mono">
-            {block.lines.join("\n")}
-          </code>
-        </pre>
-      );
-
-    case "table":
-      return (
-        <div className="overflow-x-auto my-2">
-          <table className="min-w-full divide-y divide-slate-700 text-sm">
-            <thead>
-              <tr>
-                {block.headers.map((header, i) => (
-                  <th
-                    key={i}
-                    className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-400 bg-slate-800"
-                  >
-                    {renderInlineMarkdown(header)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-700/50">
-              {block.rows.map((row, ri) => (
-                <tr key={ri}>
-                  {row.map((cell, ci) => (
-                    <td key={ci} className="px-3 py-2 text-slate-300">
-                      {renderInlineMarkdown(cell)}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      );
-
-    case "hr":
-      return <hr className="border-slate-700 my-4" />;
-
-    default:
-      return null;
-  }
 }
 
 // ============================================================
@@ -580,20 +241,25 @@ export function ScriptViewer({
     }
   }, [script.id]);
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async (markdown?: string) => {
     setSaving(true);
+    const md = markdown ?? editContent;
     const supabase = createClient();
     const { error } = await supabase
       .from("scripts")
-      .update({ content: editContent, updated_at: new Date().toISOString() })
+      .update({ content: md, updated_at: new Date().toISOString() })
       .eq("id", script.id);
 
     if (!error) {
-      setContent(editContent);
-      setMode("view");
+      setContent(md);
+      setEditContent(md);
     }
     setSaving(false);
-  };
+  }, [editContent, script.id]);
+
+  const handleDoneEditing = useCallback(() => {
+    setMode("view");
+  }, []);
 
   const handleCancelEdit = () => {
     setEditContent(content);
@@ -647,7 +313,7 @@ export function ScriptViewer({
 
           {/* Mode toggle */}
           <div className="flex items-center gap-2">
-            {mode === "view" ? (
+            {mode === "view" && (
               <button
                 onClick={() => {
                   setEditContent(content);
@@ -657,52 +323,39 @@ export function ScriptViewer({
               >
                 Edit
               </button>
-            ) : (
-              <>
-                <button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors"
-                >
-                  {saving ? "Saving..." : "Save"}
-                </button>
-                <button
-                  onClick={handleCancelEdit}
-                  className="rounded-md border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
-                >
-                  Cancel
-                </button>
-              </>
             )}
           </div>
         </div>
       </div>
 
       {/* Content */}
-      <div className="rounded-lg border border-slate-700 bg-slate-800 p-6">
+      <div className="rounded-lg border border-slate-700 bg-slate-800 overflow-hidden">
         {mode === "edit" ? (
-          <textarea
-            value={editContent}
-            onChange={(e) => setEditContent(e.target.value)}
-            className="w-full min-h-[600px] rounded-md border border-slate-600 bg-slate-900 px-4 py-3 text-sm text-slate-300 font-mono leading-relaxed placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-y"
+          <ScriptEditor
+            content={editContent}
+            onSave={handleSave}
+            onCancel={handleDoneEditing}
+            saving={saving}
           />
         ) : (
-          <div className="space-y-3">
-            {blocks.map((block, idx) => (
-              <ParagraphBlock
-                key={idx}
-                block={block}
-                paragraphIndex={idx}
-                comments={comments}
-                scriptId={script.id}
-                onCommentAdded={refreshComments}
-              />
-            ))}
-            {blocks.length === 0 && (
-              <p className="text-center text-sm text-slate-500 py-8">
-                This script has no content yet. Click Edit to add content.
-              </p>
-            )}
+          <div className="p-6">
+            <div className="space-y-3">
+              {blocks.map((block, idx) => (
+                <ParagraphBlock
+                  key={idx}
+                  block={block}
+                  paragraphIndex={idx}
+                  comments={comments}
+                  scriptId={script.id}
+                  onCommentAdded={refreshComments}
+                />
+              ))}
+              {blocks.length === 0 && (
+                <p className="text-center text-sm text-slate-500 py-8">
+                  This script has no content yet. Click Edit to add content.
+                </p>
+              )}
+            </div>
           </div>
         )}
       </div>

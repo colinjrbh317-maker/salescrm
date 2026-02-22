@@ -304,22 +304,22 @@ function getSearchQueries(lead: LeadData): string[] {
 
   if (leadType === "podcast") {
     return [
-      `"${name}" podcast host email contact`,
-      `"${name}" podcast ${city} owner`,
+      `${name} podcast host contact`,
+      `${name} podcast ${city} owner email`,
     ];
   }
 
   if (leadType === "creator") {
     return [
-      `"${name}" ${city} content creator email contact`,
-      `"${name}" social media ${city}`,
+      `${name} ${city} content creator contact`,
+      `${name} social media ${city} email`,
     ];
   }
 
-  // Business
+  // Business — no strict quotes so Google can fuzzy match the name
   return [
-    `"${name}" ${city} owner email contact`,
-    `"${name}" ${city} owner founder`,
+    `${name} ${city} owner`,
+    `${name} ${city} contact email phone`,
   ];
 }
 

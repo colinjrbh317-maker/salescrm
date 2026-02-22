@@ -5,6 +5,7 @@ import {
   PIPELINE_STAGE_COLORS,
   PRIORITY_COLORS,
 } from "@/lib/types";
+import { ReEnrichButton } from "./re-enrich-button";
 
 export function LeadHeader({ lead }: { lead: Lead }) {
   return (
@@ -49,6 +50,7 @@ export function LeadHeader({ lead }: { lead: Lead }) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <ReEnrichButton leadId={lead.id} leadName={lead.name} enrichedAt={lead.enriched_at ?? null} />
             {lead.is_hot && (
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-900/50 px-3 py-1 text-xs font-medium text-amber-300">
                 <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20">

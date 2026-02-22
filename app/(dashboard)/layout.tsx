@@ -24,6 +24,11 @@ export default async function DashboardLayout({
     .eq("id", user.id)
     .single();
 
+  // Redirect to onboarding if not completed
+  if (profile && !profile.onboarding_completed) {
+    redirect("/onboarding");
+  }
+
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar

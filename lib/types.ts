@@ -125,6 +125,9 @@ export interface Lead {
   // Notes
   notes: LeadNote[] | null;
 
+  // Shared notes
+  shared_notes: string | null;
+
   // Sync
   sheets_sync_key: string | null;
   last_synced_at: string | null;
@@ -183,6 +186,8 @@ export interface Cadence {
   scheduled_at: string;
   completed_at: string | null;
   skipped: boolean;
+  script_id: string | null;
+  template_name: string | null;
 }
 
 // ============================================================
@@ -209,7 +214,43 @@ export interface Profile {
   full_name: string | null;
   role: UserRole;
   avatar_url: string | null;
+  onboarding_completed: boolean;
+  preferred_channels: string[];
+  goals: Goals | null;
 }
+
+export interface Goals {
+  calls_per_day: number;
+  emails_per_day: number;
+  dms_per_day: number;
+  deals_per_month: number;
+  revenue_target: number;
+}
+
+// ============================================================
+// Table: sessions
+// ============================================================
+
+export type SessionType = "email" | "call" | "dm" | "mixed";
+export type SessionStatus = "active" | "completed" | "abandoned";
+
+export interface Session {
+  id: string;
+  user_id: string;
+  session_type: SessionType;
+  started_at: string;
+  ended_at: string | null;
+  leads_worked: number;
+  leads_skipped: number;
+  outcomes_summary: Record<string, number>;
+  lead_queue: string[];
+  current_index: number;
+  status: SessionStatus;
+  streak_best: number;
+  created_at: string;
+}
+
+export type SessionInsert = Omit<Session, "id" | "created_at">;
 
 // ============================================================
 // Derived / helper types
