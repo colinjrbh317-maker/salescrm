@@ -2,14 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-});
+function getAnthropic() {
+  return new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY!,
+  });
+}
 
 interface LeadData {
   id: string;
@@ -233,7 +237,7 @@ Make talking points specific to their business type and web presence needs.`;
 async function enrichLead(lead: LeadData): Promise<EnrichResult> {
   try {
     // Step 1: Search for contact/social info
-    const searchResponse = await anthropic.messages.create({
+    const searchResponse = await getAnthropic().messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 1024,
       messages: [{ role: "user", content: getContactSearchPrompt(lead) }],
@@ -280,7 +284,7 @@ async function enrichLead(lead: LeadData): Promise<EnrichResult> {
     const socialContext = socialLines.length > 0 ? socialLines.join("\n") : "No social media found";
 
     // Step 3: Generate AI briefing
-    const briefingResponse = await anthropic.messages.create({
+    const briefingResponse = await getAnthropic().messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 1500,
       messages: [{ role: "user", content: getBriefingPrompt(lead, ownerName, socialContext) }],
@@ -352,6 +356,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const supabase = getSupabase();
     const { data: leads, error: fetchError } = await supabase
       .from("leads")
       .select(
