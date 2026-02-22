@@ -16,6 +16,8 @@ async function getAnthropic() {
   });
 }
 
+// ─── Types ──────────────────────────────────────────────────
+
 interface LeadData {
   id: string;
   name: string;
@@ -38,6 +40,7 @@ interface EnrichResult {
   id: string;
   owner_name: string | null;
   owner_email: string | null;
+  phone: string | null;
   instagram: string | null;
   tiktok: string | null;
   facebook: string | null;
@@ -45,89 +48,323 @@ interface EnrichResult {
   tiktok_followers: number | null;
   facebook_followers: number | null;
   ai_briefing: Record<string, unknown> | null;
+  sources: string[];
   error?: string;
 }
 
-// ─── Contact Search Prompts by Lead Type ─────────────────────
-
-function getContactSearchPrompt(lead: LeadData): string {
-  const leadType = lead.lead_type || "business";
-
-  if (leadType === "podcast") {
-    return `Find the host and contact information for this podcast:
-
-Podcast: ${lead.name}
-City/Region: ${lead.city ?? "Unknown"}
-Category: ${lead.category ?? "Unknown"}
-Website: ${lead.website || "None"}
-Known Email: ${lead.email || "None"}
-Known Instagram: ${lead.instagram || "None"}
-Known TikTok: ${lead.tiktok || "None"}
-Known Facebook: ${lead.facebook || "None"}
-
-Return ONLY a JSON object (no markdown, no explanation):
-{
-  "owner_name": "Host's full name" or null if not found,
-  "owner_email": "email@example.com" or null if not found,
-  "instagram": "@handle" or full URL or null if not found,
-  "tiktok": "@handle" or full URL or null if not found,
-  "facebook": "page name" or full URL or null if not found,
-  "instagram_followers": approximate number or null if unknown,
-  "tiktok_followers": approximate number or null if unknown,
-  "facebook_followers": approximate number or null if unknown
+interface RawDataSource {
+  source: string;
+  content: string;
 }
 
-CRITICAL: Only return real information you actually find or know. If you cannot find something, return null. Never fabricate data. For follower counts, approximate numbers are fine but don't guess randomly.`;
+// ─── Layer 1: Website Scraping ──────────────────────────────
+
+const EMAIL_REGEX = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
+const PHONE_REGEX = /(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g;
+const SOCIAL_PATTERNS = {
+  instagram: /(?:instagram\.com|instagr\.am)\/([a-zA-Z0-9_.]+)/gi,
+  tiktok: /tiktok\.com\/@([a-zA-Z0-9_.]+)/gi,
+  facebook: /facebook\.com\/([a-zA-Z0-9_.]+)/gi,
+  twitter: /(?:twitter\.com|x\.com)\/([a-zA-Z0-9_]+)/gi,
+  youtube: /youtube\.com\/(?:@|channel\/|c\/)([a-zA-Z0-9_\-]+)/gi,
+};
+
+async function fetchPage(url: string, timeoutMs = 8000): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+      redirect: "follow",
+    });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const text = await res.text();
+    return text.slice(0, 200_000); // Cap at 200KB to avoid memory issues
+  } catch {
+    return null;
+  }
+}
+
+function stripHtmlTags(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractEmails(html: string): string[] {
+  const matches = html.match(EMAIL_REGEX) || [];
+  // Filter out common false positives
+  return [...new Set(matches)].filter(
+    (e) =>
+      !e.endsWith(".png") &&
+      !e.endsWith(".jpg") &&
+      !e.endsWith(".gif") &&
+      !e.endsWith(".svg") &&
+      !e.includes("example.com") &&
+      !e.includes("wixpress") &&
+      !e.includes("sentry") &&
+      !e.includes("googleapis") &&
+      !e.includes("webpack")
+  );
+}
+
+function extractPhones(text: string): string[] {
+  const matches = text.match(PHONE_REGEX) || [];
+  return [...new Set(matches)].filter((p) => p.replace(/\D/g, "").length >= 10);
+}
+
+function extractSocialLinks(html: string): Record<string, string[]> {
+  const results: Record<string, string[]> = {};
+  for (const [platform, regex] of Object.entries(SOCIAL_PATTERNS)) {
+    const matches: string[] = [];
+    let match;
+    const re = new RegExp(regex.source, regex.flags);
+    while ((match = re.exec(html)) !== null) {
+      const handle = match[1];
+      if (
+        handle &&
+        !["share", "sharer", "intent", "home", "login", "signup", "help", "about", "pages"].includes(
+          handle.toLowerCase()
+        )
+      ) {
+        matches.push(handle);
+      }
+    }
+    if (matches.length > 0) {
+      results[platform] = [...new Set(matches)];
+    }
+  }
+  return results;
+}
+
+function findContactPageUrls(html: string, baseUrl: string): string[] {
+  const contactPatterns = /href=["']([^"']*(?:contact|about|team|staff|our-team|meet)[^"']*?)["']/gi;
+  const urls: string[] = [];
+  let match;
+  while ((match = contactPatterns.exec(html)) !== null) {
+    try {
+      const url = new URL(match[1], baseUrl).href;
+      if (url.startsWith("http")) urls.push(url);
+    } catch {
+      // Invalid URL, skip
+    }
+  }
+  return [...new Set(urls)].slice(0, 3); // Max 3 sub-pages
+}
+
+async function scrapeWebsite(website: string): Promise<RawDataSource[]> {
+  const results: RawDataSource[] = [];
+  const url = website.startsWith("http") ? website : `https://${website}`;
+
+  // Fetch main page
+  const mainHtml = await fetchPage(url);
+  if (!mainHtml) return results;
+
+  const mainText = stripHtmlTags(mainHtml);
+  const emails = extractEmails(mainHtml);
+  const phones = extractPhones(mainText);
+  const socials = extractSocialLinks(mainHtml);
+
+  results.push({
+    source: `website:${url}`,
+    content: `[Website Main Page]\nEmails found: ${emails.join(", ") || "none"}\nPhones found: ${phones.join(", ") || "none"}\nSocial links: ${JSON.stringify(socials)}\nPage text (first 3000 chars): ${mainText.slice(0, 3000)}`,
+  });
+
+  // Find and scrape contact/about pages
+  const subPages = findContactPageUrls(mainHtml, url);
+  for (const subUrl of subPages) {
+    const subHtml = await fetchPage(subUrl);
+    if (!subHtml) continue;
+    const subText = stripHtmlTags(subHtml);
+    const subEmails = extractEmails(subHtml);
+    const subPhones = extractPhones(subText);
+
+    results.push({
+      source: `website:${subUrl}`,
+      content: `[Contact/About Page]\nEmails found: ${subEmails.join(", ") || "none"}\nPhones found: ${subPhones.join(", ") || "none"}\nPage text (first 2000 chars): ${subText.slice(0, 2000)}`,
+    });
+  }
+
+  return results;
+}
+
+// ─── Layer 2: Google Search via Serper.dev ───────────────────
+
+interface SerperResult {
+  title: string;
+  link: string;
+  snippet: string;
+}
+
+async function searchGoogle(query: string): Promise<{ results: SerperResult[]; rawText: string }> {
+  const apiKey = process.env.SERPER_API_KEY;
+  if (!apiKey) {
+    console.log("[Enrich] No SERPER_API_KEY — skipping Google search layer");
+    return { results: [], rawText: "" };
+  }
+
+  try {
+    const res = await fetch("https://google.serper.dev/search", {
+      method: "POST",
+      headers: {
+        "X-API-KEY": apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ q: query, num: 8 }),
+    });
+
+    if (!res.ok) {
+      console.error(`[Enrich] Serper API error: ${res.status}`);
+      return { results: [], rawText: "" };
+    }
+
+    const data = await res.json();
+    const organic: SerperResult[] = (data.organic || []).map(
+      (r: { title: string; link: string; snippet: string }) => ({
+        title: r.title,
+        link: r.link,
+        snippet: r.snippet,
+      })
+    );
+
+    // Also capture knowledge graph if available
+    let kgText = "";
+    if (data.knowledgeGraph) {
+      const kg = data.knowledgeGraph;
+      kgText = `\n[Google Knowledge Graph]\nTitle: ${kg.title || ""}\nType: ${kg.type || ""}\nDescription: ${kg.description || ""}\nPhone: ${kg.phone || ""}\nAddress: ${kg.address || ""}\nWebsite: ${kg.website || ""}\n`;
+      if (kg.attributes) {
+        kgText += `Attributes: ${JSON.stringify(kg.attributes)}\n`;
+      }
+    }
+
+    const rawText =
+      organic.map((r) => `[${r.title}] ${r.snippet} (${r.link})`).join("\n") + kgText;
+
+    return { results: organic, rawText };
+  } catch (error) {
+    console.error("[Enrich] Serper search error:", error);
+    return { results: [], rawText: "" };
+  }
+}
+
+// ─── Layer 3: Scrape Top Search Result Pages ────────────────
+
+async function scrapeSearchResults(results: SerperResult[], maxPages = 3): Promise<RawDataSource[]> {
+  const sources: RawDataSource[] = [];
+  const scraped = results
+    .filter((r) => {
+      const url = r.link.toLowerCase();
+      // Prioritize directory/profile pages that typically have contact info
+      return (
+        url.includes("yelp.com") ||
+        url.includes("facebook.com") ||
+        url.includes("tripadvisor.com") ||
+        url.includes("bbb.org") ||
+        url.includes("chamber") ||
+        url.includes("linkedin.com") ||
+        url.includes("yellowpages") ||
+        url.includes("manta.com") ||
+        url.includes("instagram.com") ||
+        !url.includes("google.com")
+      );
+    })
+    .slice(0, maxPages);
+
+  for (const result of scraped) {
+    const html = await fetchPage(result.link, 6000);
+    if (!html) continue;
+    const text = stripHtmlTags(html);
+    const emails = extractEmails(html);
+    const phones = extractPhones(text);
+
+    sources.push({
+      source: `search_result:${result.link}`,
+      content: `[${result.title}]\nURL: ${result.link}\nEmails found: ${emails.join(", ") || "none"}\nPhones found: ${phones.join(", ") || "none"}\nPage text (first 2000 chars): ${text.slice(0, 2000)}`,
+    });
+  }
+
+  return sources;
+}
+
+// ─── Layer 4: Claude Extraction (parse, never generate) ─────
+
+function getSearchQueries(lead: LeadData): string[] {
+  const leadType = lead.lead_type || "business";
+  const name = lead.name;
+  const city = lead.city || "";
+
+  if (leadType === "podcast") {
+    return [
+      `"${name}" podcast host email contact`,
+      `"${name}" podcast ${city} owner`,
+    ];
   }
 
   if (leadType === "creator") {
-    return `Find contact and social media information for this content creator:
-
-Creator: ${lead.name}
-City/Region: ${lead.city ?? "Unknown"}
-Niche/Category: ${lead.category ?? "Unknown"}
-Website: ${lead.website || "None"}
-Known Email: ${lead.email || "None"}
-Known Instagram: ${lead.instagram || "None"}
-Known TikTok: ${lead.tiktok || "None"}
-Known Facebook: ${lead.facebook || "None"}
-
-Return ONLY a JSON object (no markdown, no explanation):
-{
-  "owner_name": "Creator's real name" or null if not found,
-  "owner_email": "email@example.com" or null if not found,
-  "instagram": "@handle" or full URL or null if not found,
-  "tiktok": "@handle" or full URL or null if not found,
-  "facebook": "page name" or full URL or null if not found,
-  "instagram_followers": approximate number or null if unknown,
-  "tiktok_followers": approximate number or null if unknown,
-  "facebook_followers": approximate number or null if unknown
-}
-
-CRITICAL: Only return real information you actually find or know. If you cannot find something, return null. Never fabricate data. For follower counts, approximate numbers are fine but don't guess randomly.`;
+    return [
+      `"${name}" ${city} content creator email contact`,
+      `"${name}" social media ${city}`,
+    ];
   }
 
-  // Default: business
-  return `Search for the owner, founder, or manager of this business and their contact email:
+  // Business
+  return [
+    `"${name}" ${city} owner email contact`,
+    `"${name}" ${city} owner founder`,
+  ];
+}
 
-Business: ${lead.name}
-City: ${lead.city ?? "Unknown"}
-Category: ${lead.category ?? "Unknown"}
-Website: ${lead.website || "None"}
+function getExtractionPrompt(lead: LeadData, rawSources: RawDataSource[]): string {
+  const leadType = lead.lead_type || "business";
+  const sourceText = rawSources
+    .map((s) => `--- Source: ${s.source} ---\n${s.content}`)
+    .join("\n\n");
+
+  const typeLabel = leadType === "podcast" ? "podcast host" : leadType === "creator" ? "content creator" : "business owner";
+
+  return `You are a data extraction assistant. Below is raw data collected from web scraping and Google search results about "${lead.name}" (${lead.city || "unknown city"}).
+
+CRITICAL RULES:
+1. ONLY extract information that is EXPLICITLY stated in the raw data below.
+2. Do NOT generate, guess, or infer any contact information from your training data.
+3. If information is not found in the data below, return null for that field.
+4. For emails: only return emails that appear in the raw data. Never make up email addresses.
+5. For owner/host name: only return names explicitly associated with this ${leadType} in the data.
+6. For social handles: only return handles found in the data.
+7. For follower counts: only return if explicitly stated in the data.
+
+Known existing data:
+- Phone: ${lead.phone || "none"}
+- Email: ${lead.email || "none"}
+- Instagram: ${lead.instagram || "none"}
+- TikTok: ${lead.tiktok || "none"}
+- Facebook: ${lead.facebook || "none"}
+
+RAW DATA FROM WEB SOURCES:
+${sourceText}
 
 Return ONLY a JSON object (no markdown, no explanation):
 {
-  "owner_name": "First Last" or null if not found,
-  "owner_email": "email@example.com" or null if not found,
-  "instagram": null,
-  "tiktok": null,
-  "facebook": null,
-  "instagram_followers": null,
-  "tiktok_followers": null,
-  "facebook_followers": null
-}
-
-CRITICAL: Only return real information you actually find. If you cannot find the owner or email, return null for those fields. Never fabricate data.`;
+  "owner_name": "the ${typeLabel}'s name" or null if not found in data,
+  "owner_email": "email found in data" or null if not found,
+  "phone": "phone number found" or null if not found or already known,
+  "instagram": "@handle or URL" or null if not found,
+  "tiktok": "@handle or URL" or null if not found,
+  "facebook": "page or URL" or null if not found,
+  "instagram_followers": number or null if not in data,
+  "tiktok_followers": number or null if not in data,
+  "facebook_followers": number or null if not in data,
+  "data_sources": ["list of source URLs where you found each piece of info"]
+}`;
 }
 
 // ─── AI Briefing Prompts by Lead Type ────────────────────────
@@ -233,20 +470,59 @@ Base your recommended_channel on:
 Make talking points specific to their business type and web presence needs.`;
 }
 
-// ─── Core Enrichment Function ────────────────────────────────
+// ─── Core Enrichment Function (4-Layer Cascade) ─────────────
 
 async function enrichLead(lead: LeadData): Promise<EnrichResult> {
   try {
-    // Step 1: Search for contact/social info
+    const rawSources: RawDataSource[] = [];
+    const dataSources: string[] = [];
+
+    // ── Layer 1: Scrape lead's website ──
+    if (lead.website) {
+      console.log(`[Enrich] Layer 1: Scraping website for ${lead.name}`);
+      const websiteData = await scrapeWebsite(lead.website);
+      rawSources.push(...websiteData);
+      if (websiteData.length > 0) dataSources.push("website");
+    }
+
+    // ── Layer 2: Google Search via Serper ──
+    const queries = getSearchQueries(lead);
+    console.log(`[Enrich] Layer 2: Google search for ${lead.name}`);
+    const searchData = await searchGoogle(queries[0]);
+    if (searchData.rawText) {
+      rawSources.push({
+        source: `google_search:${queries[0]}`,
+        content: searchData.rawText,
+      });
+      dataSources.push("google_search");
+    }
+
+    // Second query for additional coverage
+    if (queries[1]) {
+      const searchData2 = await searchGoogle(queries[1]);
+      if (searchData2.rawText) {
+        rawSources.push({
+          source: `google_search:${queries[1]}`,
+          content: searchData2.rawText,
+        });
+      }
+    }
+
+    // ── Layer 3: Scrape top search result pages ──
+    if (searchData.results.length > 0) {
+      console.log(`[Enrich] Layer 3: Scraping ${Math.min(3, searchData.results.length)} search result pages`);
+      const pageData = await scrapeSearchResults(searchData.results, 3);
+      rawSources.push(...pageData);
+      if (pageData.length > 0) dataSources.push("directory_pages");
+    }
+
+    // ── Layer 4: Claude extracts structured data from raw sources ──
+    console.log(`[Enrich] Layer 4: Claude extraction from ${rawSources.length} sources`);
     const anthropic = await getAnthropic();
-    const searchResponse = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 1024,
-      messages: [{ role: "user", content: getContactSearchPrompt(lead) }],
-    });
 
     let ownerName: string | null = null;
     let ownerEmail: string | null = null;
+    let phone: string | null = lead.phone;
     let instagram: string | null = lead.instagram;
     let tiktok: string | null = lead.tiktok;
     let facebook: string | null = lead.facebook;
@@ -254,46 +530,78 @@ async function enrichLead(lead: LeadData): Promise<EnrichResult> {
     let tiktokFollowers: number | null = null;
     let facebookFollowers: number | null = null;
 
-    const searchText =
-      searchResponse.content[0].type === "text"
-        ? searchResponse.content[0].text
-        : "";
+    if (rawSources.length > 0) {
+      const extractionResponse = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1024,
+        messages: [
+          { role: "user", content: getExtractionPrompt(lead, rawSources) },
+        ],
+      });
 
-    try {
-      const jsonMatch = searchText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        ownerName = parsed.owner_name || null;
-        ownerEmail = parsed.owner_email || null;
-        // Only update social if we found new data (don't overwrite existing)
-        if (parsed.instagram && !instagram) instagram = parsed.instagram;
-        if (parsed.tiktok && !tiktok) tiktok = parsed.tiktok;
-        if (parsed.facebook && !facebook) facebook = parsed.facebook;
-        // Follower counts
-        if (typeof parsed.instagram_followers === "number") instagramFollowers = parsed.instagram_followers;
-        if (typeof parsed.tiktok_followers === "number") tiktokFollowers = parsed.tiktok_followers;
-        if (typeof parsed.facebook_followers === "number") facebookFollowers = parsed.facebook_followers;
+      const extractionText =
+        extractionResponse.content[0].type === "text"
+          ? extractionResponse.content[0].text
+          : "";
+
+      try {
+        const jsonMatch = extractionText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          ownerName = parsed.owner_name || null;
+          ownerEmail = parsed.owner_email || null;
+          if (parsed.phone && !phone) phone = parsed.phone;
+          if (parsed.instagram && !instagram) instagram = parsed.instagram;
+          if (parsed.tiktok && !tiktok) tiktok = parsed.tiktok;
+          if (parsed.facebook && !facebook) facebook = parsed.facebook;
+          if (typeof parsed.instagram_followers === "number")
+            instagramFollowers = parsed.instagram_followers;
+          if (typeof parsed.tiktok_followers === "number")
+            tiktokFollowers = parsed.tiktok_followers;
+          if (typeof parsed.facebook_followers === "number")
+            facebookFollowers = parsed.facebook_followers;
+          if (Array.isArray(parsed.data_sources)) {
+            dataSources.push(...parsed.data_sources);
+          }
+        }
+      } catch {
+        console.error(
+          `[Enrich] Failed to parse extraction for ${lead.name}`
+        );
       }
-    } catch {
-      console.error(`[Enrich] Failed to parse contact search for ${lead.name}`);
     }
 
-    // Step 2: Build social context string for briefing
+    // ── Generate AI briefing with enriched data ──
     const socialLines: string[] = [];
-    if (instagram) socialLines.push(`Instagram: ${instagram}${instagramFollowers ? ` (~${instagramFollowers.toLocaleString()} followers)` : ""}`);
-    if (tiktok) socialLines.push(`TikTok: ${tiktok}${tiktokFollowers ? ` (~${tiktokFollowers.toLocaleString()} followers)` : ""}`);
-    if (facebook) socialLines.push(`Facebook: ${facebook}${facebookFollowers ? ` (~${facebookFollowers.toLocaleString()} followers)` : ""}`);
-    const socialContext = socialLines.length > 0 ? socialLines.join("\n") : "No social media found";
+    if (instagram)
+      socialLines.push(
+        `Instagram: ${instagram}${instagramFollowers ? ` (~${instagramFollowers.toLocaleString()} followers)` : ""}`
+      );
+    if (tiktok)
+      socialLines.push(
+        `TikTok: ${tiktok}${tiktokFollowers ? ` (~${tiktokFollowers.toLocaleString()} followers)` : ""}`
+      );
+    if (facebook)
+      socialLines.push(
+        `Facebook: ${facebook}${facebookFollowers ? ` (~${facebookFollowers.toLocaleString()} followers)` : ""}`
+      );
+    const socialContext =
+      socialLines.length > 0
+        ? socialLines.join("\n")
+        : "No social media found";
 
-    // Step 3: Generate AI briefing
     const briefingResponse = await anthropic.messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 1500,
-      messages: [{ role: "user", content: getBriefingPrompt(lead, ownerName, socialContext) }],
+      messages: [
+        {
+          role: "user",
+          content: getBriefingPrompt(lead, ownerName, socialContext),
+        },
+      ],
     });
 
     let aiBriefing: Record<string, unknown> | null = null;
-
     const briefingText =
       briefingResponse.content[0].type === "text"
         ? briefingResponse.content[0].text
@@ -312,6 +620,7 @@ async function enrichLead(lead: LeadData): Promise<EnrichResult> {
       id: lead.id,
       owner_name: ownerName,
       owner_email: ownerEmail,
+      phone,
       instagram,
       tiktok,
       facebook,
@@ -319,6 +628,7 @@ async function enrichLead(lead: LeadData): Promise<EnrichResult> {
       tiktok_followers: tiktokFollowers,
       facebook_followers: facebookFollowers,
       ai_briefing: aiBriefing,
+      sources: [...new Set(dataSources)],
     };
   } catch (error) {
     console.error(`[Enrich] Error enriching ${lead.name}:`, error);
@@ -326,6 +636,7 @@ async function enrichLead(lead: LeadData): Promise<EnrichResult> {
       id: lead.id,
       owner_name: null,
       owner_email: null,
+      phone: null,
       instagram: null,
       tiktok: null,
       facebook: null,
@@ -333,6 +644,7 @@ async function enrichLead(lead: LeadData): Promise<EnrichResult> {
       tiktok_followers: null,
       facebook_followers: null,
       ai_briefing: null,
+      sources: [],
       error: error instanceof Error ? error.message : "Unknown error",
     };
   }
@@ -353,8 +665,14 @@ export async function POST(request: NextRequest) {
 
     if (!process.env.ANTHROPIC_API_KEY) {
       return NextResponse.json(
-        { error: "ANTHROPIC_API_KEY not configured. Add it to .env.local" },
+        { error: "ANTHROPIC_API_KEY not configured" },
         { status: 500 }
+      );
+    }
+
+    if (!process.env.SERPER_API_KEY) {
+      console.warn(
+        "[Enrich] SERPER_API_KEY not set — Google search layer disabled. Add it for much better enrichment."
       );
     }
 
@@ -385,6 +703,7 @@ export async function POST(request: NextRequest) {
 
       if (result.owner_name) updateData.owner_name = result.owner_name;
       if (result.owner_email) updateData.owner_email = result.owner_email;
+      if (result.phone && !lead.phone) updateData.phone = result.phone;
       if (result.ai_briefing) updateData.ai_briefing = result.ai_briefing;
       if (result.ai_briefing?.recommended_channel) {
         updateData.ai_channel_rec = result.ai_briefing.recommended_channel;
@@ -397,22 +716,32 @@ export async function POST(request: NextRequest) {
 
       await supabase.from("leads").update(updateData).eq("id", lead.id);
 
-      // Follower counts in separate call (columns may not exist yet)
+      // Follower counts
       const followerData: Record<string, number> = {};
-      if (result.instagram_followers) followerData.instagram_followers = result.instagram_followers;
-      if (result.tiktok_followers) followerData.tiktok_followers = result.tiktok_followers;
-      if (result.facebook_followers) followerData.facebook_followers = result.facebook_followers;
+      if (result.instagram_followers)
+        followerData.instagram_followers = result.instagram_followers;
+      if (result.tiktok_followers)
+        followerData.tiktok_followers = result.tiktok_followers;
+      if (result.facebook_followers)
+        followerData.facebook_followers = result.facebook_followers;
 
       if (Object.keys(followerData).length > 0) {
-        await supabase.from("leads").update(followerData).eq("id", lead.id)
+        await supabase
+          .from("leads")
+          .update(followerData)
+          .eq("id", lead.id)
           .then(({ error }) => {
-            if (error) console.log(`[Enrich] Follower columns not yet added — skipping follower counts for ${lead.name}`);
+            if (error)
+              console.log(
+                `[Enrich] Follower columns not yet added — skipping for ${lead.name}`
+              );
           });
       }
     }
 
     const enriched = results.filter((r) => !r.error).length;
     const withOwner = results.filter((r) => r.owner_name).length;
+    const withEmail = results.filter((r) => r.owner_email).length;
     const withBriefing = results.filter((r) => r.ai_briefing).length;
 
     return NextResponse.json({
@@ -420,11 +749,14 @@ export async function POST(request: NextRequest) {
       total: results.length,
       enriched,
       with_owner: withOwner,
+      with_email: withEmail,
       with_briefing: withBriefing,
       results: results.map((r) => ({
         id: r.id,
         owner_name: r.owner_name,
+        owner_email: r.owner_email,
         has_briefing: !!r.ai_briefing,
+        sources: r.sources,
         error: r.error,
       })),
     });
