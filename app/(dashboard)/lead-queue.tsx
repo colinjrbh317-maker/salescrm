@@ -181,9 +181,9 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
     [leads, selectedIds]
   );
 
-  // Bulk actions
+  // Bulk actions (enrich + re-enrich)
   async function handleBulkEnrich() {
-    const toEnrich = selectedLeads.filter((l) => !l.enriched_at);
+    const toEnrich = [...selectedLeads];
     if (toEnrich.length === 0) return;
 
     setEnriching(true);
@@ -326,9 +326,16 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
     },
   ];
 
-  // Count how many selected leads are already enriched (for guard)
+  // Count enrichment status for button label
   const alreadyEnrichedCount = selectedLeads.filter((l) => l.enriched_at).length;
-  const canEnrich = selectedIds.size > 0 && alreadyEnrichedCount < selectedIds.size;
+  const unenrichedCount = selectedIds.size - alreadyEnrichedCount;
+  const enrichButtonLabel = enriching
+    ? "Enriching..."
+    : alreadyEnrichedCount === selectedIds.size
+    ? "Re-Enrich"
+    : unenrichedCount === selectedIds.size
+    ? "Enrich"
+    : `Enrich (${unenrichedCount} new, ${alreadyEnrichedCount} re-enrich)`;
 
   return (
     <div>
@@ -504,19 +511,12 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
             {selectedIds.size} selected
           </span>
           <button
-            onClick={() => {
-              if (canEnrich) handleBulkEnrich();
-            }}
-            disabled={!canEnrich || enriching}
+            onClick={handleBulkEnrich}
+            disabled={enriching}
             className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
-            title={
-              !canEnrich
-                ? "All selected leads are already enriched"
-                : "Enrich selected leads"
-            }
+            title="Enrich or re-enrich selected leads"
           >
-            {enriching ? "Enriching..." : "Enrich"}
-            {alreadyEnrichedCount > 0 && ` (${alreadyEnrichedCount} skipped)`}
+            {enrichButtonLabel}
           </button>
           <button
             onClick={() => setShowNoteModal(true)}
