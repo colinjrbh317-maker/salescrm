@@ -40,6 +40,7 @@ interface EnrichResult {
   id: string;
   owner_name: string | null;
   owner_email: string | null;
+  website: string | null;
   phone: string | null;
   instagram: string | null;
   tiktok: string | null;
@@ -49,6 +50,8 @@ interface EnrichResult {
   facebook_followers: number | null;
   ai_briefing: Record<string, unknown> | null;
   sources: string[];
+  website_scores: WebsiteScores | null;
+  website_analysis: WebsiteAnalysis | null;
   error?: string;
 }
 
@@ -295,6 +298,159 @@ async function scrapeSearchResults(results: SerperResult[], maxPages = 3): Promi
   return sources;
 }
 
+// ─── Website Quality Analysis (ported from analyze.py + score.py) ─────
+
+interface WebsiteAnalysis {
+  has_website: boolean;
+  ssl_valid: boolean;
+  mobile_friendly: boolean;
+  content_freshness: string | null;
+  has_meta_description: boolean;
+  has_cta: boolean;
+  has_contact_form: boolean;
+  has_social_links: boolean;
+  load_time_ms: number;
+}
+
+interface WebsiteScores {
+  composite_score: number;
+  technical_score: number;
+  content_score: number;
+  mobile_score: number;
+  presence_score: number;
+  design_score: number;
+}
+
+async function analyzeWebsite(url: string): Promise<WebsiteAnalysis> {
+  const result: WebsiteAnalysis = {
+    has_website: true,
+    ssl_valid: false,
+    mobile_friendly: false,
+    content_freshness: null,
+    has_meta_description: false,
+    has_cta: false,
+    has_contact_form: false,
+    has_social_links: false,
+    load_time_ms: 0,
+  };
+
+  const httpsUrl = url.startsWith("https") ? url : url.replace("http://", "https://");
+  const startTime = Date.now();
+
+  // Try HTTPS first (checks SSL)
+  let html = await fetchPage(httpsUrl, 10000);
+  if (html) {
+    result.ssl_valid = true;
+  } else {
+    // Fall back to HTTP
+    const httpUrl = url.startsWith("http") ? url : `http://${url}`;
+    html = await fetchPage(httpUrl, 10000);
+  }
+
+  result.load_time_ms = Date.now() - startTime;
+
+  if (!html) {
+    result.has_website = false;
+    return result;
+  }
+
+  const lowerHtml = html.toLowerCase();
+
+  // Viewport meta (mobile-friendly indicator)
+  result.mobile_friendly = /name=["']viewport["']/.test(lowerHtml);
+
+  // Meta description
+  result.has_meta_description = /name=["']description["']/.test(lowerHtml) && /content=["'][^"']+["']/.test(lowerHtml);
+
+  // CTA elements
+  const ctaPatterns = /contact\s*us|get\s*a?\s*quote|book\s*(now|online|appointment)|schedule|free\s*(estimate|consultation|quote)|call\s*(now|us|today)|request\s*(a\s*)?(quote|estimate)|sign\s*up|get\s*started/i;
+  const pageText = stripHtmlTags(html);
+  result.has_cta = ctaPatterns.test(pageText) || /<button/i.test(html);
+
+  // Contact form
+  result.has_contact_form = /<form[\s>]/i.test(html);
+
+  // Social media links
+  result.has_social_links = /facebook\.com|instagram\.com|tiktok\.com|twitter\.com|x\.com|youtube\.com|linkedin\.com/i.test(html);
+
+  // Content freshness — copyright year
+  const yearMatch = pageText.match(/(?:©|copyright)\s*(?:\d{4}\s*[-–]\s*)?(\d{4})/i);
+  if (yearMatch) {
+    result.content_freshness = yearMatch[1];
+  } else {
+    // Check for recent year anywhere in page
+    const recentYears = pageText.match(/20[2-3]\d/g);
+    if (recentYears) {
+      result.content_freshness = recentYears.sort().pop() || null;
+    }
+  }
+
+  return result;
+}
+
+function computeScores(
+  analysis: WebsiteAnalysis,
+  lead: { website: string | null; google_rating: number | null; review_count: number | null; instagram: string | null; tiktok: string | null; facebook: string | null }
+): WebsiteScores {
+  // Technical score (0-100)
+  let technical = 0;
+  if (analysis.ssl_valid) technical += 25;
+  if (analysis.load_time_ms > 0 && analysis.load_time_ms < 2000) technical += 25;
+  else if (analysis.load_time_ms < 4000) technical += 15;
+  else if (analysis.load_time_ms < 8000) technical += 5;
+  technical += 25; // HTTP 200 (if we got html, it was 200)
+  if (analysis.mobile_friendly) technical += 25;
+
+  // Content score (0-100)
+  let content = 0;
+  if (analysis.has_meta_description) content += 15;
+  if (analysis.has_cta) content += 25;
+  if (analysis.has_contact_form) content += 20;
+  if (analysis.has_social_links) content += 15;
+  if (analysis.content_freshness) {
+    const age = new Date().getFullYear() - parseInt(analysis.content_freshness);
+    if (age <= 1) content += 25;
+    else if (age <= 3) content += 15;
+    else if (age <= 5) content += 5;
+  }
+  content = Math.min(content, 100);
+
+  // Mobile score (0-100)
+  const mobile = analysis.mobile_friendly ? 100 : 0;
+
+  // Presence score (0-100)
+  let presence = 0;
+  if (lead.website) presence += 40;
+  const rating = lead.google_rating || 0;
+  if (rating >= 4.0) presence += 20;
+  else if (rating >= 3.0) presence += 10;
+  const reviews = lead.review_count || 0;
+  if (reviews > 50) presence += 20;
+  else if (reviews > 10) presence += 10;
+  if (lead.instagram || lead.tiktok || lead.facebook) presence += 20;
+
+  // Design score — default 50 (would need visual AI to score properly)
+  const design = 50;
+
+  // Composite (weighted average matching score.py weights)
+  const composite = Math.round(
+    technical * 0.20 +
+    design * 0.25 +
+    content * 0.20 +
+    mobile * 0.15 +
+    presence * 0.20
+  );
+
+  return {
+    composite_score: composite,
+    technical_score: technical,
+    content_score: content,
+    mobile_score: mobile,
+    presence_score: presence,
+    design_score: design,
+  };
+}
+
 // ─── Layer 4: Claude Extraction (parse, never generate) ─────
 
 function getSearchQueries(lead: LeadData): string[] {
@@ -343,6 +499,7 @@ CRITICAL RULES:
 7. For follower counts: only return if explicitly stated in the data.
 
 Known existing data:
+- Website: ${lead.website || "none"}
 - Phone: ${lead.phone || "none"}
 - Email: ${lead.email || "none"}
 - Instagram: ${lead.instagram || "none"}
@@ -356,6 +513,7 @@ Return ONLY a JSON object (no markdown, no explanation):
 {
   "owner_name": "the ${typeLabel}'s name" or null if not found in data,
   "owner_email": "email found in data" or null if not found,
+  "website": "website URL found in data" or null if not found or already known,
   "phone": "phone number found" or null if not found or already known,
   "instagram": "@handle or URL" or null if not found,
   "tiktok": "@handle or URL" or null if not found,
@@ -369,8 +527,11 @@ Return ONLY a JSON object (no markdown, no explanation):
 
 // ─── AI Briefing Prompts by Lead Type ────────────────────────
 
-function getBriefingPrompt(lead: LeadData, ownerName: string | null, socialContext: string): string {
+function getBriefingPrompt(lead: LeadData, ownerName: string | null, socialContext: string, smartTiming: string | null): string {
   const leadType = lead.lead_type || "business";
+  const timingInstruction = smartTiming
+    ? `\nSmart Call Timing Analysis: ${smartTiming}\nFor best_time_to_call, use the timing analysis above verbatim.`
+    : "";
 
   if (leadType === "podcast") {
     return `Generate a sales briefing for reaching out to this podcast about potential sponsorship, guest appearances, or collaboration. Return ONLY a JSON object (no markdown, no explanation).
@@ -382,7 +543,7 @@ City/Region: ${lead.city ?? "Unknown"}
 Website: ${lead.website || "None"}
 Phone: ${lead.phone || "None"}
 Email: ${lead.email || "None"}
-${socialContext}
+${socialContext}${timingInstruction}
 
 Return this exact JSON structure:
 {
@@ -391,7 +552,7 @@ Return this exact JSON structure:
   "recommended_channel": "cold_call" or "cold_email" or "social_dm",
   "channel_reasoning": "1 sentence explaining why this channel is best",
   "objections": ["likely objection 1", "likely objection 2"],
-  "best_time_to_call": "e.g., Weekday mornings 9-11am",
+  "best_time_to_call": "${smartTiming || "e.g., Weekday mornings 9-11am"}",
   "audience_profile": "Brief description of who listens to this podcast",
   "content_style": "Brief description of the podcast's style and format"
 }
@@ -414,7 +575,7 @@ City/Region: ${lead.city ?? "Unknown"}
 Website: ${lead.website || "None"}
 Phone: ${lead.phone || "None"}
 Email: ${lead.email || "None"}
-${socialContext}
+${socialContext}${timingInstruction}
 
 Return this exact JSON structure:
 {
@@ -423,7 +584,7 @@ Return this exact JSON structure:
   "recommended_channel": "cold_call" or "cold_email" or "social_dm",
   "channel_reasoning": "1 sentence explaining why this channel is best",
   "objections": ["likely objection 1", "likely objection 2"],
-  "best_time_to_call": "e.g., Weekday mornings 9-11am",
+  "best_time_to_call": "${smartTiming || "e.g., Weekday mornings 9-11am"}",
   "audience_profile": "Brief description of who follows this creator",
   "content_style": "Brief description of what content they make and their vibe"
 }
@@ -450,6 +611,7 @@ Reviews: ${lead.review_count ?? "Unknown"}
 Web Quality Score: ${lead.composite_score ?? "Unknown"}/100
 Has Website: ${lead.has_website ? "Yes" : "No"}
 Owner: ${ownerName ?? "Unknown"}
+${timingInstruction}
 
 Return this exact JSON structure:
 {
@@ -458,7 +620,7 @@ Return this exact JSON structure:
   "recommended_channel": "cold_call" or "cold_email" or "social_dm" or "walk_in",
   "channel_reasoning": "1 sentence explaining why this channel is best",
   "objections": ["likely objection 1", "likely objection 2"],
-  "best_time_to_call": "e.g., Weekday mornings 9-11am"
+  "best_time_to_call": "${smartTiming || "e.g., Weekday mornings 9-11am"}"
 }
 
 Base your recommended_channel on:
@@ -522,6 +684,7 @@ async function enrichLead(lead: LeadData): Promise<EnrichResult> {
 
     let ownerName: string | null = null;
     let ownerEmail: string | null = null;
+    let discoveredWebsite: string | null = null;
     let phone: string | null = lead.phone;
     let instagram: string | null = lead.instagram;
     let tiktok: string | null = lead.tiktok;
@@ -550,6 +713,7 @@ async function enrichLead(lead: LeadData): Promise<EnrichResult> {
           const parsed = JSON.parse(jsonMatch[0]);
           ownerName = parsed.owner_name || null;
           ownerEmail = parsed.owner_email || null;
+          if (parsed.website && !lead.website) discoveredWebsite = parsed.website;
           if (parsed.phone && !phone) phone = parsed.phone;
           if (parsed.instagram && !instagram) instagram = parsed.instagram;
           if (parsed.tiktok && !tiktok) tiktok = parsed.tiktok;
@@ -571,19 +735,86 @@ async function enrichLead(lead: LeadData): Promise<EnrichResult> {
       }
     }
 
+    // ── Layer 5: If website was discovered, scrape it and run quality analysis ──
+    let websiteScores: WebsiteScores | null = null;
+    let websiteAnalysisResult: WebsiteAnalysis | null = null;
+    const effectiveWebsite = discoveredWebsite || lead.website;
+
+    if (discoveredWebsite && !lead.website) {
+      console.log(`[Enrich] Layer 5: Discovered website ${discoveredWebsite} for ${lead.name} — running analysis`);
+
+      // Scrape the newly discovered website for additional contact info
+      const newWebsiteData = await scrapeWebsite(discoveredWebsite);
+      rawSources.push(...newWebsiteData);
+      if (newWebsiteData.length > 0) dataSources.push("discovered_website");
+
+      // Run website quality analysis
+      websiteAnalysisResult = await analyzeWebsite(discoveredWebsite);
+
+      // Compute scores with updated lead data
+      websiteScores = computeScores(websiteAnalysisResult, {
+        website: discoveredWebsite,
+        google_rating: lead.google_rating,
+        review_count: lead.review_count,
+        instagram,
+        tiktok,
+        facebook,
+      });
+
+      console.log(`[Enrich] Website analysis complete for ${lead.name}: composite=${websiteScores.composite_score}`);
+    } else if (lead.website) {
+      // Lead already had a website — re-analyze on re-enrich
+      websiteAnalysisResult = await analyzeWebsite(lead.website);
+      websiteScores = computeScores(websiteAnalysisResult, {
+        website: lead.website,
+        google_rating: lead.google_rating,
+        review_count: lead.review_count,
+        instagram,
+        tiktok,
+        facebook,
+      });
+    }
+
+    // ── Build enriched lead with all discovered data for briefing ──
+    const enrichedLead: LeadData = {
+      ...lead,
+      website: effectiveWebsite || lead.website,
+      has_website: !!(effectiveWebsite || lead.website),
+      composite_score: websiteScores?.composite_score ?? lead.composite_score,
+      phone: phone || lead.phone,
+      email: lead.email,
+      instagram: instagram || lead.instagram,
+      tiktok: tiktok || lead.tiktok,
+      facebook: facebook || lead.facebook,
+    };
+
+    // ── Smart call timing from deterministic engine ──
+    let smartTiming: string | null = null;
+    try {
+      const { classifyBusinessType, getWindowSummary } = await import("@/lib/call-timing");
+      const businessType = classifyBusinessType(lead.category);
+      const windows = getWindowSummary(businessType);
+      smartTiming = windows
+        .map((w) => `${w.dayLabel} ${w.timeRange} (${w.quality})`)
+        .join(", ");
+      console.log(`[Enrich] Smart timing for ${lead.name} (${businessType}): ${smartTiming}`);
+    } catch (timingError) {
+      console.error(`[Enrich] Smart timing failed for ${lead.name}:`, timingError);
+    }
+
     // ── Generate AI briefing with enriched data ──
     const socialLines: string[] = [];
-    if (instagram)
+    if (enrichedLead.instagram)
       socialLines.push(
-        `Instagram: ${instagram}${instagramFollowers ? ` (~${instagramFollowers.toLocaleString()} followers)` : ""}`
+        `Instagram: ${enrichedLead.instagram}${instagramFollowers ? ` (~${instagramFollowers.toLocaleString()} followers)` : ""}`
       );
-    if (tiktok)
+    if (enrichedLead.tiktok)
       socialLines.push(
-        `TikTok: ${tiktok}${tiktokFollowers ? ` (~${tiktokFollowers.toLocaleString()} followers)` : ""}`
+        `TikTok: ${enrichedLead.tiktok}${tiktokFollowers ? ` (~${tiktokFollowers.toLocaleString()} followers)` : ""}`
       );
-    if (facebook)
+    if (enrichedLead.facebook)
       socialLines.push(
-        `Facebook: ${facebook}${facebookFollowers ? ` (~${facebookFollowers.toLocaleString()} followers)` : ""}`
+        `Facebook: ${enrichedLead.facebook}${facebookFollowers ? ` (~${facebookFollowers.toLocaleString()} followers)` : ""}`
       );
     const socialContext =
       socialLines.length > 0
@@ -596,7 +827,7 @@ async function enrichLead(lead: LeadData): Promise<EnrichResult> {
       messages: [
         {
           role: "user",
-          content: getBriefingPrompt(lead, ownerName, socialContext),
+          content: getBriefingPrompt(enrichedLead, ownerName, socialContext, smartTiming),
         },
       ],
     });
@@ -620,6 +851,7 @@ async function enrichLead(lead: LeadData): Promise<EnrichResult> {
       id: lead.id,
       owner_name: ownerName,
       owner_email: ownerEmail,
+      website: discoveredWebsite,
       phone,
       instagram,
       tiktok,
@@ -629,6 +861,8 @@ async function enrichLead(lead: LeadData): Promise<EnrichResult> {
       facebook_followers: facebookFollowers,
       ai_briefing: aiBriefing,
       sources: [...new Set(dataSources)],
+      website_scores: websiteScores,
+      website_analysis: websiteAnalysisResult,
     };
   } catch (error) {
     console.error(`[Enrich] Error enriching ${lead.name}:`, error);
@@ -636,6 +870,7 @@ async function enrichLead(lead: LeadData): Promise<EnrichResult> {
       id: lead.id,
       owner_name: null,
       owner_email: null,
+      website: null,
       phone: null,
       instagram: null,
       tiktok: null,
@@ -645,6 +880,8 @@ async function enrichLead(lead: LeadData): Promise<EnrichResult> {
       facebook_followers: null,
       ai_briefing: null,
       sources: [],
+      website_scores: null,
+      website_analysis: null,
       error: error instanceof Error ? error.message : "Unknown error",
     };
   }
@@ -680,7 +917,7 @@ export async function POST(request: NextRequest) {
     const { data: leads, error: fetchError } = await supabase
       .from("leads")
       .select(
-        "id, name, lead_type, category, city, website, phone, email, instagram, tiktok, facebook, google_rating, review_count, composite_score, has_website"
+        "id, name, lead_type, category, city, website, phone, email, instagram, tiktok, facebook, google_rating, review_count, composite_score, has_website, assigned_to"
       )
       .in("id", leadIds);
 
@@ -707,6 +944,31 @@ export async function POST(request: NextRequest) {
       if (result.ai_briefing) updateData.ai_briefing = result.ai_briefing;
       if (result.ai_briefing?.recommended_channel) {
         updateData.ai_channel_rec = result.ai_briefing.recommended_channel;
+      }
+
+      // Website discovery — update URL and has_website flag
+      if (result.website && !lead.website) {
+        updateData.website = result.website;
+        updateData.has_website = true;
+      }
+
+      // Website quality scores (from analysis of discovered or existing website)
+      if (result.website_scores) {
+        updateData.composite_score = result.website_scores.composite_score;
+        updateData.technical_score = result.website_scores.technical_score;
+        updateData.content_score = result.website_scores.content_score;
+        updateData.mobile_score = result.website_scores.mobile_score;
+        updateData.presence_score = result.website_scores.presence_score;
+        updateData.design_score = result.website_scores.design_score;
+      }
+
+      // Website analysis flags
+      if (result.website_analysis) {
+        updateData.ssl_valid = result.website_analysis.ssl_valid;
+        updateData.mobile_friendly = result.website_analysis.mobile_friendly;
+        if (result.website_analysis.content_freshness) {
+          updateData.content_freshness = result.website_analysis.content_freshness;
+        }
       }
 
       // Social media updates (only if we found new data)
@@ -736,6 +998,63 @@ export async function POST(request: NextRequest) {
                 `[Enrich] Follower columns not yet added — skipping for ${lead.name}`
               );
           });
+      }
+
+      // ── Auto-generate cadence from available channels ──
+      try {
+        const { detectAvailableChannels, generateCadence } = await import("@/lib/cadence-generator");
+        const channels = detectAvailableChannels({
+          phone: result.phone || lead.phone,
+          email: lead.email,
+          owner_email: result.owner_email,
+          instagram: result.instagram || lead.instagram,
+          facebook: result.facebook || lead.facebook,
+          tiktok: result.tiktok || lead.tiktok,
+        });
+
+        const hasAnyChannel = Object.values(channels).some(Boolean);
+        const userId = (lead as Record<string, unknown>).assigned_to as string | null;
+
+        if (hasAnyChannel && userId) {
+          // Check for existing pending cadences
+          const { data: existingCadences } = await supabase
+            .from("cadences")
+            .select("id")
+            .eq("lead_id", lead.id)
+            .is("completed_at", null)
+            .eq("skipped", false)
+            .limit(1);
+
+          if (!existingCadences || existingCadences.length === 0) {
+            const steps = generateCadence({
+              leadId: lead.id,
+              userId,
+              category: lead.category,
+              availableChannels: channels,
+              recommendedChannel: (result.ai_briefing as Record<string, unknown> | null)?.recommended_channel as string | null | undefined,
+            });
+
+            if (steps.length > 0) {
+              const cadenceRows = steps.map((s) => ({
+                lead_id: lead.id,
+                user_id: userId,
+                step_number: s.step_number,
+                channel: s.channel,
+                scheduled_at: s.scheduled_at,
+                template_name: s.template_name,
+                skipped: false,
+              }));
+
+              await supabase.from("cadences").insert(cadenceRows);
+              console.log(`[Enrich] Auto-created ${steps.length}-step cadence for ${lead.name}`);
+            }
+          } else {
+            console.log(`[Enrich] Skipping cadence generation for ${lead.name} — existing cadence found`);
+          }
+        }
+      } catch (cadenceError) {
+        // Non-blocking: log but don't fail enrichment
+        console.error(`[Enrich] Cadence generation failed for ${lead.name}:`, cadenceError);
       }
     }
 

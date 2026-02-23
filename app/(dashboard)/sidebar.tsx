@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -70,25 +71,57 @@ interface SidebarProps {
 export function Sidebar({ userName, userRole }: SidebarProps) {
   const pathname = usePathname();
   const supabase = createClient();
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("sidebar-collapsed");
+    if (saved === "true") setCollapsed(true);
+  }, []);
+
+  function toggleCollapse() {
+    const next = !collapsed;
+    setCollapsed(next);
+    localStorage.setItem("sidebar-collapsed", String(next));
+  }
 
   async function handleLogout() {
     await supabase.auth.signOut();
-    // Full page navigation clears Next.js router cache entirely
     window.location.href = "/login";
   }
 
   return (
-    <aside className="flex h-full w-64 flex-col border-r border-slate-700 bg-slate-800">
+    <aside
+      className={`flex h-full flex-col border-r border-slate-700 bg-slate-800 transition-all duration-200 ${
+        collapsed ? "w-16" : "w-64"
+      }`}
+    >
       {/* Brand */}
-      <div className="flex h-16 items-center gap-2 border-b border-slate-700 px-6">
-        <svg className="h-6 w-6 text-blue-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
-        </svg>
-        <span className="text-lg font-bold text-white">Sales CRM</span>
+      <div className="flex h-14 items-center justify-between border-b border-slate-700 px-3">
+        {!collapsed && (
+          <div className="flex items-center gap-2 px-1">
+            <svg className="h-5 w-5 text-emerald-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
+            </svg>
+            <span className="text-sm font-bold text-white">Sales CRM</span>
+          </div>
+        )}
+        <button
+          onClick={toggleCollapse}
+          className="rounded p-1.5 text-slate-400 hover:bg-slate-700 hover:text-white"
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            {collapsed ? (
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+            ) : (
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+            )}
+          </svg>
+        </button>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-1 px-3 py-4">
+      <nav className="flex-1 space-y-1 px-2 py-3">
         {NAV_ITEMS.map((item) => {
           const isActive =
             item.href === "/"
@@ -98,53 +131,64 @@ export function Sidebar({ userName, userRole }: SidebarProps) {
             <Link
               key={item.href}
               href={item.href}
+              title={collapsed ? item.label : undefined}
               className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                collapsed ? "justify-center" : ""
+              } ${
                 isActive
                   ? "bg-slate-700 text-white"
                   : "text-slate-400 hover:bg-slate-700/50 hover:text-slate-200"
               }`}
             >
               {item.icon}
-              {item.label}
+              {!collapsed && item.label}
             </Link>
           );
         })}
       </nav>
 
       {/* Session link */}
-      <div className="px-3 pb-2">
+      <div className="px-2 pb-2">
         <Link
           href="/session"
-          className="flex items-center gap-3 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+          title={collapsed ? "Start Session" : undefined}
+          className={`flex items-center gap-3 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700 ${
+            collapsed ? "justify-center" : ""
+          }`}
         >
           <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
           </svg>
-          Start Session
+          {!collapsed && "Start Session"}
         </Link>
       </div>
 
       {/* User section */}
-      <div className="border-t border-slate-700 p-4">
-        <div className="mb-3 flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-sm font-medium text-white">
+      <div className="border-t border-slate-700 p-3">
+        <div className={`mb-2 flex items-center gap-2 ${collapsed ? "justify-center" : ""}`}>
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-sm font-medium text-white">
             {userName.charAt(0).toUpperCase()}
           </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-white">
-              {userName}
-            </p>
-            <p className="text-xs capitalize text-slate-400">{userRole}</p>
-          </div>
+          {!collapsed && (
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-white">
+                {userName}
+              </p>
+              <p className="text-xs capitalize text-slate-400">{userRole}</p>
+            </div>
+          )}
         </div>
         <button
           onClick={handleLogout}
-          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-slate-400 transition-colors hover:bg-slate-700 hover:text-white"
+          title={collapsed ? "Sign Out" : undefined}
+          className={`flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-sm text-slate-400 transition-colors hover:bg-slate-700 hover:text-white ${
+            collapsed ? "justify-center" : ""
+          }`}
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" />
           </svg>
-          Sign Out
+          {!collapsed && "Sign Out"}
         </button>
       </div>
     </aside>

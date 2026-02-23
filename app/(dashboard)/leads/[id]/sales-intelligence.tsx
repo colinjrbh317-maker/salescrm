@@ -53,8 +53,8 @@ function InfoRow({
 
 export function SalesIntelligence({ lead }: { lead: Lead }) {
   return (
-    <div className="rounded-lg border border-slate-700 bg-slate-800 p-5">
-      <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-400">
+    <div className="rounded-lg border border-slate-700 bg-slate-800 p-4">
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-400">
         Sales Intelligence
       </h2>
 

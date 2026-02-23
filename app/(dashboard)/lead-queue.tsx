@@ -18,10 +18,6 @@ type Tab = "my" | "unassigned" | "all";
 
 interface LeadQueueProps {
   leads: Lead[];
-  hotLeads: Pick<
-    Lead,
-    "id" | "name" | "category" | "city" | "composite_score" | "pipeline_stage"
-  >[];
   currentUserId: string;
   teamMembers?: { id: string; full_name: string | null }[];
   userRole?: string;
@@ -61,7 +57,7 @@ function getInitials(name: string | null): string {
     .slice(0, 2);
 }
 
-export function LeadQueue({ leads, hotLeads, currentUserId, teamMembers = [], userRole }: LeadQueueProps) {
+export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: LeadQueueProps) {
   const [activeTab, setActiveTab] = useState<Tab>("my");
   const [search, setSearch] = useState("");
   const [claimingId, setClaimingId] = useState<string | null>(null);
@@ -86,7 +82,8 @@ export function LeadQueue({ leads, hotLeads, currentUserId, teamMembers = [], us
   const [filterCity, setFilterCity] = useState("");
   const [filterPriority, setFilterPriority] = useState("");
   const [filterStage, setFilterStage] = useState<PipelineStage | "">("");
-  const [filterHot, setFilterHot] = useState<"" | "yes" | "no">("");
+  const [filterChannel, setFilterChannel] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
   const router = useRouter();
   const supabase = createClient();
 
@@ -109,7 +106,7 @@ export function LeadQueue({ leads, hotLeads, currentUserId, teamMembers = [], us
     return Array.from(pris).sort();
   }, [leads]);
 
-  const activeFilterCount = [filterType, filterCategory, filterCity, filterPriority, filterStage, filterHot].filter(Boolean).length;
+  const activeFilterCount = [filterType, filterCategory, filterCity, filterPriority, filterStage, filterChannel].filter(Boolean).length;
 
   const clearAllFilters = () => {
     setFilterType("");
@@ -117,7 +114,7 @@ export function LeadQueue({ leads, hotLeads, currentUserId, teamMembers = [], us
     setFilterCity("");
     setFilterPriority("");
     setFilterStage("");
-    setFilterHot("");
+    setFilterChannel("");
   };
 
   const filteredLeads = useMemo(() => {
@@ -147,11 +144,10 @@ export function LeadQueue({ leads, hotLeads, currentUserId, teamMembers = [], us
     if (filterCity) filtered = filtered.filter((l) => l.city === filterCity);
     if (filterPriority) filtered = filtered.filter((l) => l.priority === filterPriority);
     if (filterStage) filtered = filtered.filter((l) => l.pipeline_stage === filterStage);
-    if (filterHot === "yes") filtered = filtered.filter((l) => l.is_hot);
-    if (filterHot === "no") filtered = filtered.filter((l) => !l.is_hot);
+    if (filterChannel) filtered = filtered.filter((l) => l.ai_channel_rec === filterChannel);
 
     return filtered;
-  }, [leads, activeTab, search, currentUserId, filterType, filterCategory, filterCity, filterPriority, filterStage, filterHot]);
+  }, [leads, activeTab, search, currentUserId, filterType, filterCategory, filterCity, filterPriority, filterStage, filterChannel]);
 
   // Team member lookup
   const teamMemberMap = useMemo(() => {
@@ -336,204 +332,131 @@ export function LeadQueue({ leads, hotLeads, currentUserId, teamMembers = [], us
 
   return (
     <div>
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Lead Queue</h1>
-        <p className="mt-1 text-sm text-slate-400">
-          Prioritized by website quality score - worst sites first
-        </p>
-      </div>
+      {/* Unified Toolbar */}
+      <div className="mb-3 flex h-12 items-center gap-3">
+        <h1 className="text-lg font-semibold text-white">Leads</h1>
 
-      {/* Hot Leads Banner */}
-      {hotLeads.length > 0 && (
-        <div className="mb-6 rounded-lg border border-amber-700/50 bg-amber-900/20 p-4">
-          <div className="mb-2 flex items-center gap-2">
-            <svg className="h-5 w-5 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M12.395 2.553a1 1 0 00-1.45-.385c-.345.23-.614.558-.822.88-.214.33-.403.713-.57 1.116-.334.804-.614 1.768-.84 2.734a31.365 31.365 0 00-.613 3.58 2.64 2.64 0 01-.945-1.067c-.328-.68-.398-1.534-.398-2.654A1 1 0 005.05 6.05 6.981 6.981 0 003 11a7 7 0 1011.95-4.95c-.592-.591-.98-.985-1.348-1.467-.363-.476-.724-1.063-1.207-2.03zM12.12 15.12A3 3 0 017 13s.879.5 2.5.5c0-1 .5-4 1.25-4.5.5 1 .786 1.293 1.371 1.879A2.99 2.99 0 0113 13a2.99 2.99 0 01-.879 2.121z" clipRule="evenodd" />
-            </svg>
-            <span className="text-sm font-semibold text-amber-300">
-              Hot Leads
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {hotLeads.map((lead) => (
-              <button
-                key={lead.id}
-                onClick={() => router.push(`/leads/${lead.id}`)}
-                className="rounded-md border border-amber-700/30 bg-amber-900/30 px-3 py-1.5 text-sm text-amber-200 transition-colors hover:bg-amber-800/40"
-              >
-                {lead.name}
-                {lead.city ? ` - ${lead.city}` : ""}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Tabs */}
-      <div className="mb-4 flex items-center gap-6 border-b border-slate-700">
-        {tabs.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => {
-              setActiveTab(tab.key);
-              setSelectedIds(new Set());
-            }}
-            className={`flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-medium transition-colors ${
-              activeTab === tab.key
-                ? "border-blue-500 text-white"
-                : "border-transparent text-slate-400 hover:text-slate-300"
-            }`}
-          >
-            {tab.label}
-            <span
-              className={`rounded-full px-2 py-0.5 text-xs ${
+        {/* Tab pills */}
+        <div className="flex items-center gap-1 rounded-md bg-slate-800 p-0.5">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => {
+                setActiveTab(tab.key);
+                setSelectedIds(new Set());
+              }}
+              className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors ${
                 activeTab === tab.key
-                  ? "bg-blue-600 text-white"
-                  : "bg-slate-700 text-slate-400"
+                  ? "bg-slate-700 text-white"
+                  : "text-slate-400 hover:text-slate-300"
               }`}
             >
-              {tab.count}
-            </span>
-          </button>
-        ))}
-      </div>
+              {tab.label}
+              <span className="text-[10px] opacity-60">{tab.count}</span>
+            </button>
+          ))}
+        </div>
 
-      {/* Search + Auto-assign */}
-      <div className="mb-4 flex items-center gap-3">
+        {/* Search */}
         <input
           type="text"
-          placeholder="Search by name, city, or category..."
+          placeholder="Search..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full max-w-md rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="w-48 rounded-md border border-slate-600 bg-slate-800 px-2.5 py-1.5 text-xs text-white placeholder-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
         />
+
+        {/* Filter button */}
+        <div className="relative">
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+              activeFilterCount > 0
+                ? "border-emerald-600 bg-emerald-900/30 text-emerald-300"
+                : "border-slate-600 bg-slate-800 text-slate-400 hover:text-white"
+            }`}
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 0 1-.659 1.591l-5.432 5.432a2.25 2.25 0 0 0-.659 1.591v2.927a2.25 2.25 0 0 1-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 0 0-.659-1.591L3.659 7.409A2.25 2.25 0 0 1 3 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0 1 12 3Z" />
+            </svg>
+            Filters
+            {activeFilterCount > 0 && (
+              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-600 text-[10px] text-white">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+
+          {/* Filter popover */}
+          {showFilters && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setShowFilters(false)} />
+              <div className="absolute right-0 top-full z-40 mt-1 w-72 rounded-lg border border-slate-600 bg-slate-800 p-3 shadow-xl">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-xs font-medium text-slate-400">Filters</span>
+                  {activeFilterCount > 0 && (
+                    <button onClick={clearAllFilters} className="text-xs text-slate-500 hover:text-white">
+                      Clear all
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <select value={filterType} onChange={(e) => setFilterType(e.target.value as LeadType | "")} className="w-full rounded border border-slate-600 bg-slate-700 px-2 py-1.5 text-xs text-slate-300 focus:border-emerald-500 focus:outline-none">
+                    <option value="">All Types</option>
+                    {LEAD_TYPES.map((t) => (<option key={t} value={t}>{LEAD_TYPE_LABELS[t]}</option>))}
+                  </select>
+                  <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="w-full rounded border border-slate-600 bg-slate-700 px-2 py-1.5 text-xs text-slate-300 focus:border-emerald-500 focus:outline-none">
+                    <option value="">All Categories</option>
+                    {uniqueCategories.map((c) => (<option key={c} value={c}>{c}</option>))}
+                  </select>
+                  <select value={filterCity} onChange={(e) => setFilterCity(e.target.value)} className="w-full rounded border border-slate-600 bg-slate-700 px-2 py-1.5 text-xs text-slate-300 focus:border-emerald-500 focus:outline-none">
+                    <option value="">All Cities</option>
+                    {uniqueCities.map((c) => (<option key={c} value={c}>{c}</option>))}
+                  </select>
+                  <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)} className="w-full rounded border border-slate-600 bg-slate-700 px-2 py-1.5 text-xs text-slate-300 focus:border-emerald-500 focus:outline-none">
+                    <option value="">All Priorities</option>
+                    {uniquePriorities.map((p) => (<option key={p} value={p}>{p}</option>))}
+                  </select>
+                  <select value={filterStage} onChange={(e) => setFilterStage(e.target.value as PipelineStage | "")} className="w-full rounded border border-slate-600 bg-slate-700 px-2 py-1.5 text-xs text-slate-300 focus:border-emerald-500 focus:outline-none">
+                    <option value="">All Stages</option>
+                    {PIPELINE_STAGES.map((s) => (<option key={s} value={s}>{PIPELINE_STAGE_LABELS[s]}</option>))}
+                  </select>
+                  <select value={filterChannel} onChange={(e) => setFilterChannel(e.target.value)} className="w-full rounded border border-slate-600 bg-slate-700 px-2 py-1.5 text-xs text-slate-300 focus:border-emerald-500 focus:outline-none">
+                    <option value="">All Channels</option>
+                    <option value="cold_call">Call Recommended</option>
+                    <option value="cold_email">Email Recommended</option>
+                    <option value="social_dm">DM Recommended</option>
+                    <option value="walk_in">Walk-in Recommended</option>
+                  </select>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="flex-1" />
+
         {(userRole === "admin") && teamMembers.length > 0 && leads.some((l) => !l.assigned_to) && (
           <button
             onClick={handleAutoAssign}
             disabled={autoAssigning}
-            className="whitespace-nowrap rounded-md bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700 disabled:opacity-50"
+            className="whitespace-nowrap rounded-md bg-purple-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-purple-700 disabled:opacity-50"
           >
-            {autoAssigning
-              ? "Assigning..."
-              : `Auto-Assign ${leads.filter((l) => !l.assigned_to).length} Leads`}
+            {autoAssigning ? "..." : `Auto-Assign`}
           </button>
         )}
+
+        <button
+          onClick={() => router.push("/leads/new")}
+          className="flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700"
+        >
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+          Add Lead
+        </button>
       </div>
 
-      {/* Filter Bar */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <span className="text-xs font-medium text-slate-500 mr-1">Filters:</span>
-        <select
-          value={filterType}
-          onChange={(e) => setFilterType(e.target.value as LeadType | "")}
-          className="rounded-md border border-slate-600 bg-slate-800 px-2 py-1.5 text-xs text-slate-300 focus:border-blue-500 focus:outline-none"
-        >
-          <option value="">All Types</option>
-          {LEAD_TYPES.map((t) => (
-            <option key={t} value={t}>{LEAD_TYPE_LABELS[t]}</option>
-          ))}
-        </select>
-        <select
-          value={filterCategory}
-          onChange={(e) => setFilterCategory(e.target.value)}
-          className="rounded-md border border-slate-600 bg-slate-800 px-2 py-1.5 text-xs text-slate-300 focus:border-blue-500 focus:outline-none"
-        >
-          <option value="">All Categories</option>
-          {uniqueCategories.map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
-        <select
-          value={filterCity}
-          onChange={(e) => setFilterCity(e.target.value)}
-          className="rounded-md border border-slate-600 bg-slate-800 px-2 py-1.5 text-xs text-slate-300 focus:border-blue-500 focus:outline-none"
-        >
-          <option value="">All Cities</option>
-          {uniqueCities.map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
-        <select
-          value={filterPriority}
-          onChange={(e) => setFilterPriority(e.target.value)}
-          className="rounded-md border border-slate-600 bg-slate-800 px-2 py-1.5 text-xs text-slate-300 focus:border-blue-500 focus:outline-none"
-        >
-          <option value="">All Priorities</option>
-          {uniquePriorities.map((p) => (
-            <option key={p} value={p}>{p}</option>
-          ))}
-        </select>
-        <select
-          value={filterStage}
-          onChange={(e) => setFilterStage(e.target.value as PipelineStage | "")}
-          className="rounded-md border border-slate-600 bg-slate-800 px-2 py-1.5 text-xs text-slate-300 focus:border-blue-500 focus:outline-none"
-        >
-          <option value="">All Stages</option>
-          {PIPELINE_STAGES.map((s) => (
-            <option key={s} value={s}>{PIPELINE_STAGE_LABELS[s]}</option>
-          ))}
-        </select>
-        <select
-          value={filterHot}
-          onChange={(e) => setFilterHot(e.target.value as "" | "yes" | "no")}
-          className="rounded-md border border-slate-600 bg-slate-800 px-2 py-1.5 text-xs text-slate-300 focus:border-blue-500 focus:outline-none"
-        >
-          <option value="">Hot?</option>
-          <option value="yes">Hot Only</option>
-          <option value="no">Not Hot</option>
-        </select>
-        {activeFilterCount > 0 && (
-          <button
-            onClick={clearAllFilters}
-            className="rounded-md px-2 py-1.5 text-xs text-slate-400 hover:text-white transition-colors"
-          >
-            Clear all
-          </button>
-        )}
-      </div>
-
-      {/* Active Filter Chips */}
-      {activeFilterCount > 0 && (
-        <div className="mb-3 flex flex-wrap items-center gap-1.5">
-          {filterType && (
-            <button onClick={() => setFilterType("")} className="inline-flex items-center gap-1 rounded-full bg-purple-900/40 border border-purple-700/50 px-2.5 py-1 text-xs text-purple-300 hover:bg-purple-800/40">
-              {LEAD_TYPE_LABELS[filterType]}
-              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
-          )}
-          {filterCategory && (
-            <button onClick={() => setFilterCategory("")} className="inline-flex items-center gap-1 rounded-full bg-blue-900/40 border border-blue-700/50 px-2.5 py-1 text-xs text-blue-300 hover:bg-blue-800/40">
-              {filterCategory}
-              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
-          )}
-          {filterCity && (
-            <button onClick={() => setFilterCity("")} className="inline-flex items-center gap-1 rounded-full bg-emerald-900/40 border border-emerald-700/50 px-2.5 py-1 text-xs text-emerald-300 hover:bg-emerald-800/40">
-              {filterCity}
-              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
-          )}
-          {filterPriority && (
-            <button onClick={() => setFilterPriority("")} className="inline-flex items-center gap-1 rounded-full bg-amber-900/40 border border-amber-700/50 px-2.5 py-1 text-xs text-amber-300 hover:bg-amber-800/40">
-              {filterPriority}
-              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
-          )}
-          {filterStage && (
-            <button onClick={() => setFilterStage("")} className="inline-flex items-center gap-1 rounded-full bg-slate-700/60 border border-slate-600/50 px-2.5 py-1 text-xs text-slate-300 hover:bg-slate-600/60">
-              {PIPELINE_STAGE_LABELS[filterStage]}
-              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
-          )}
-          {filterHot && (
-            <button onClick={() => setFilterHot("")} className="inline-flex items-center gap-1 rounded-full bg-amber-900/40 border border-amber-700/50 px-2.5 py-1 text-xs text-amber-300 hover:bg-amber-800/40">
-              {filterHot === "yes" ? "Hot" : "Not Hot"}
-              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
-          )}
-        </div>
-      )}
 
       {/* Enrichment Progress Bar */}
       {enrichProgress && (
@@ -635,25 +558,13 @@ export function LeadQueue({ leads, hotLeads, currentUserId, teamMembers = [], us
                   className="h-4 w-4 rounded border-slate-500 bg-slate-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-0"
                 />
               </th>
-              <th className="px-4 py-3 font-medium text-slate-300">Name</th>
-              <th className="px-4 py-3 font-medium text-slate-300">Type</th>
-              <th className="px-4 py-3 font-medium text-slate-300">
-                Category
-              </th>
-              <th className="px-4 py-3 font-medium text-slate-300">City</th>
-              <th className="px-4 py-3 font-medium text-slate-300">
-                Priority
-              </th>
-              <th className="px-4 py-3 font-medium text-slate-300">Stage</th>
-              <th className="px-4 py-3 font-medium text-slate-300">Score</th>
-              <th className="px-4 py-3 font-medium text-slate-300">
-                Last Contact
-              </th>
-              <th className="px-4 py-3 font-medium text-slate-300">
-                Next Follow-up
-              </th>
+              <th className="px-3 py-2.5 text-xs font-medium text-slate-400">Lead</th>
+              <th className="px-3 py-2.5 text-xs font-medium text-slate-400">Priority</th>
+              <th className="px-3 py-2.5 text-xs font-medium text-slate-400">Stage</th>
+              <th className="px-3 py-2.5 text-xs font-medium text-slate-400">Score</th>
+              <th className="px-3 py-2.5 text-xs font-medium text-slate-400">Last Activity</th>
               {activeTab === "unassigned" && (
-                <th className="px-4 py-3 font-medium text-slate-300">
+                <th className="px-3 py-2.5 text-xs font-medium text-slate-400">
                   Action
                 </th>
               )}
@@ -663,7 +574,7 @@ export function LeadQueue({ leads, hotLeads, currentUserId, teamMembers = [], us
             {filteredLeads.length === 0 ? (
               <tr>
                 <td
-                  colSpan={activeTab === "unassigned" ? 11 : 10}
+                  colSpan={activeTab === "unassigned" ? 7 : 6}
                   className="px-4 py-12 text-center text-slate-500"
                 >
                   {search
@@ -691,92 +602,56 @@ export function LeadQueue({ leads, hotLeads, currentUserId, teamMembers = [], us
                       className="h-4 w-4 rounded border-slate-500 bg-slate-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-0"
                     />
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2.5">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-white">
-                        {lead.name}
-                      </span>
-                      {lead.enriched_at && (
-                        <svg
-                          className="h-4 w-4 text-yellow-400"
-                          fill="currentColor"
-                          viewBox="0 0 20 20"
-                          aria-label="Enriched"
-                        >
-                          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                        </svg>
-                      )}
-                      {lead.is_hot && (
-                        <svg className="h-4 w-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M12.395 2.553a1 1 0 00-1.45-.385c-.345.23-.614.558-.822.88-.214.33-.403.713-.57 1.116-.334.804-.614 1.768-.84 2.734a31.365 31.365 0 00-.613 3.58 2.64 2.64 0 01-.945-1.067c-.328-.68-.398-1.534-.398-2.654A1 1 0 005.05 6.05 6.981 6.981 0 003 11a7 7 0 1011.95-4.95c-.592-.591-.98-.985-1.348-1.467-.363-.476-.724-1.063-1.207-2.03zM12.12 15.12A3 3 0 017 13s.879.5 2.5.5c0-1 .5-4 1.25-4.5.5 1 .786 1.293 1.371 1.879A2.99 2.99 0 0113 13a2.99 2.99 0 01-.879 2.121z" clipRule="evenodd" />
-                        </svg>
-                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-medium text-white">{lead.name}</span>
+                          {lead.enriched_at && (
+                            <svg className="h-3.5 w-3.5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20" aria-label="Enriched">
+                              <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                            </svg>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <Badge label={LEAD_TYPE_LABELS[lead.lead_type] ?? "Business"} colorClass={LEAD_TYPE_COLORS[lead.lead_type] ?? "bg-blue-600 text-blue-100"} />
+                          {lead.city && <span className="text-xs text-slate-500">{lead.city}</span>}
+                        </div>
+                      </div>
                       {lead.assigned_to && teamMemberMap[lead.assigned_to] && (
-                        <span
-                          className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white"
-                          title={teamMemberMap[lead.assigned_to]}
-                        >
+                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white" title={teamMemberMap[lead.assigned_to]}>
                           {getInitials(teamMemberMap[lead.assigned_to])}
                         </span>
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3">
-                    <Badge
-                      label={LEAD_TYPE_LABELS[lead.lead_type] ?? "Business"}
-                      colorClass={LEAD_TYPE_COLORS[lead.lead_type] ?? "bg-blue-600 text-blue-100"}
-                    />
-                  </td>
-                  <td className="px-4 py-3 text-slate-400">
-                    {lead.category ?? "-"}
-                  </td>
-                  <td className="px-4 py-3 text-slate-400">
-                    {lead.city ?? "-"}
-                  </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2.5">
                     {lead.priority ? (
-                      <Badge
-                        label={lead.priority}
-                        colorClass={
-                          PRIORITY_COLORS[lead.priority] ??
-                          "bg-slate-600 text-slate-200"
-                        }
-                      />
+                      <Badge label={lead.priority} colorClass={PRIORITY_COLORS[lead.priority] ?? "bg-slate-600 text-slate-200"} />
                     ) : (
                       <span className="text-slate-500">-</span>
                     )}
                   </td>
-                  <td className="px-4 py-3">
-                    <Badge
-                      label={PIPELINE_STAGE_LABELS[lead.pipeline_stage]}
-                      colorClass={PIPELINE_STAGE_COLORS[lead.pipeline_stage]}
-                    />
+                  <td className="px-3 py-2.5">
+                    <Badge label={PIPELINE_STAGE_LABELS[lead.pipeline_stage]} colorClass={PIPELINE_STAGE_COLORS[lead.pipeline_stage]} />
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2.5">
                     {lead.composite_score != null ? (
-                      <span
-                        className={`font-mono text-sm ${
-                          lead.composite_score <= 30
-                            ? "text-red-400"
-                            : lead.composite_score <= 60
-                            ? "text-yellow-400"
-                            : "text-emerald-400"
-                        }`}
-                      >
+                      <span className={`font-mono text-xs ${lead.composite_score <= 30 ? "text-red-400" : lead.composite_score <= 60 ? "text-yellow-400" : "text-emerald-400"}`}>
                         {lead.composite_score}
                       </span>
                     ) : (
                       <span className="text-slate-500">-</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-slate-400">
-                    {formatDate(lead.last_contacted_at)}
-                  </td>
-                  <td className="px-4 py-3 text-slate-400">
-                    {formatDate(lead.next_followup_at)}
+                  <td className="px-3 py-2.5">
+                    <div className="text-xs text-slate-400">{formatDate(lead.last_contacted_at)}</div>
+                    {lead.next_followup_at && (
+                      <div className="text-[10px] text-slate-500">Next: {formatDate(lead.next_followup_at)}</div>
+                    )}
                   </td>
                   {activeTab === "unassigned" && (
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-2.5">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();

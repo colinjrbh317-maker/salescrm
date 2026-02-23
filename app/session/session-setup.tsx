@@ -155,7 +155,7 @@ export default function SessionSetup({ userId, goals }: SessionSetupProps) {
   return (
     <div className="space-y-8">
       <div className="text-center">
-        <h1 className="text-2xl font-bold text-white">Start a Session</h1>
+        <h1 className="text-lg font-semibold text-white">Start a Session</h1>
         <p className="mt-2 text-sm text-slate-400">
           Choose your session type to build a lead queue
         </p>
@@ -167,13 +167,13 @@ export default function SessionSetup({ userId, goals }: SessionSetupProps) {
           <button
             key={st.value}
             onClick={() => handleSelect(st.value)}
-            className={`flex flex-col items-center gap-3 rounded-lg border p-6 transition ${
+            className={`flex flex-col items-center gap-3 rounded-lg border p-4 transition ${
               st.color
             } ${
               selected === st.value ? `ring-2 ${st.ring}` : "hover:opacity-80"
             }`}
           >
-            <span className="text-3xl">{st.icon}</span>
+            <span className="text-2xl">{st.icon}</span>
             <span className="text-lg font-semibold">{st.label}</span>
           </button>
         ))}

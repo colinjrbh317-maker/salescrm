@@ -227,7 +227,7 @@ export function CadenceManager({
 
   if (!hasActiveCadence) {
     return (
-      <div className="rounded-lg border border-slate-700 bg-slate-800 p-5">
+      <div className="rounded-lg border border-slate-700 bg-slate-800 p-4">
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-400">
           Start a Cadence
         </h2>
@@ -297,7 +297,7 @@ export function CadenceManager({
       : 0;
 
   return (
-    <div className="rounded-lg border border-slate-700 bg-slate-800 p-5">
+    <div className="rounded-lg border border-slate-700 bg-slate-800 p-4">
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
           Active Cadence

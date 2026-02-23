@@ -302,7 +302,7 @@ export default async function AnalyticsPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Analytics</h1>
+        <h1 className="text-lg font-semibold text-white">Analytics</h1>
         <p className="mt-1 text-sm text-slate-400">
           Pipeline and activity metrics
         </p>
@@ -313,13 +313,13 @@ export default async function AnalyticsPage() {
       {/* ====================================================== */}
 
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-lg border border-slate-700 bg-slate-800 p-5">
+        <div className="rounded-lg border border-slate-700 bg-slate-800 p-4">
           <p className="text-xs font-medium uppercase text-slate-400">
             Total Leads
           </p>
           <p className="mt-2 text-3xl font-bold text-white">{totalLeads}</p>
         </div>
-        <div className="rounded-lg border border-slate-700 bg-slate-800 p-5">
+        <div className="rounded-lg border border-slate-700 bg-slate-800 p-4">
           <p className="text-xs font-medium uppercase text-slate-400">
             Closed Revenue
           </p>
@@ -327,13 +327,13 @@ export default async function AnalyticsPage() {
             ${totalRevenue.toLocaleString()}
           </p>
         </div>
-        <div className="rounded-lg border border-slate-700 bg-slate-800 p-5">
+        <div className="rounded-lg border border-slate-700 bg-slate-800 p-4">
           <p className="text-xs font-medium uppercase text-slate-400">
             Avg Web Score
           </p>
           <p className="mt-2 text-3xl font-bold text-white">{avgComposite}</p>
         </div>
-        <div className="rounded-lg border border-slate-700 bg-slate-800 p-5">
+        <div className="rounded-lg border border-slate-700 bg-slate-800 p-4">
           <p className="text-xs font-medium uppercase text-slate-400">
             Activities (7d)
           </p>

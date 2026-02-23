@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { ACTIVITY_TYPE_LABELS } from "@/lib/types";
 import type { ActivityType } from "@/lib/types";
+import { scoreCurrentMoment } from "@/lib/call-timing";
 import type { CadenceWithLead } from "./cadence-hub";
 
 // ============================================================
@@ -86,6 +87,19 @@ export function CadenceStepCard({ cadence, isOwner = true }: CadenceStepCardProp
     ACTIVITY_TYPE_BADGE_COLORS[cadence.channel] ??
     "bg-slate-700 text-slate-300 border-slate-600";
   const isEmailType = EMAIL_TYPES.includes(cadence.channel);
+  const isCallType = cadence.channel === "cold_call" || cadence.channel === "follow_up_call";
+
+  // Timing score for call steps
+  const timing = isCallType
+    ? scoreCurrentMoment({ category: cadence.leads.category })
+    : null;
+
+  const TIMING_DOT_COLORS = {
+    emerald: "bg-emerald-400",
+    blue: "bg-blue-400",
+    amber: "bg-amber-400",
+    slate: "bg-slate-500",
+  } as const;
 
   // Check if overdue
   const now = new Date();
@@ -128,6 +142,13 @@ export function CadenceStepCard({ cadence, isOwner = true }: CadenceStepCardProp
             >
               {ACTIVITY_TYPE_LABELS[activityType] ?? cadence.channel}
             </span>
+
+            {timing && (
+              <span className="inline-flex items-center gap-1 text-xs text-slate-500" title={`${timing.label} to call`}>
+                <span className={`inline-block h-2 w-2 rounded-full ${TIMING_DOT_COLORS[timing.color]}`} />
+                {timing.label}
+              </span>
+            )}
           </div>
 
           {/* Category + City */}

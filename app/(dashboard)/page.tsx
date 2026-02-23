@@ -20,15 +20,6 @@ export default async function DashboardPage() {
     .from("profiles")
     .select("id, full_name");
 
-  // Fetch hot leads
-  const { data: hotLeads } = await supabase
-    .from("leads")
-    .select("id, name, category, city, composite_score, pipeline_stage")
-    .eq("is_hot", true)
-    .not("pipeline_stage", "in", '("closed_won","closed_lost","dead")')
-    .order("composite_score", { ascending: true })
-    .limit(5);
-
   // Fetch all active leads for the queue
   const { data: allLeads } = await supabase
     .from("leads")
@@ -55,7 +46,6 @@ export default async function DashboardPage() {
     <div>
       <LeadQueue
         leads={allLeads ?? []}
-        hotLeads={hotLeads ?? []}
         currentUserId={user?.id ?? ""}
         teamMembers={teamMembers ?? []}
         userRole={profile?.role ?? "salesperson"}

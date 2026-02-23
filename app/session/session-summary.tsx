@@ -56,7 +56,7 @@ export default function SessionSummary({
         {celebratory && (
           <p className="text-4xl mb-2">{"\uD83C\uDF89"}</p>
         )}
-        <h1 className="text-2xl font-bold text-white">Session Complete</h1>
+        <h1 className="text-lg font-semibold text-white">Session Complete</h1>
         <p className="mt-1 text-sm text-slate-400">
           {mins}m {secs}s elapsed
         </p>

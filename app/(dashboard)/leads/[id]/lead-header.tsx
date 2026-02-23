@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
 import type { Lead } from "@/lib/types";
 import {
@@ -6,8 +9,11 @@ import {
   PRIORITY_COLORS,
 } from "@/lib/types";
 import { ReEnrichButton } from "./re-enrich-button";
+import { LeadEditForm } from "./lead-edit-form";
 
 export function LeadHeader({ lead }: { lead: Lead }) {
+  const [editing, setEditing] = useState(false);
+
   return (
     <div>
       {/* Breadcrumb */}
@@ -20,11 +26,11 @@ export function LeadHeader({ lead }: { lead: Lead }) {
       </nav>
 
       {/* Header card */}
-      <div className="rounded-lg border border-slate-700 bg-slate-800 p-6">
+      <div className="rounded-lg border border-slate-700 bg-slate-800 p-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-white">{lead.name}</h1>
+              <h1 className="text-lg font-semibold text-white">{lead.name}</h1>
               {lead.enriched_at && (
                 <svg
                   className="h-5 w-5 text-yellow-400"
@@ -50,15 +56,13 @@ export function LeadHeader({ lead }: { lead: Lead }) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setEditing(!editing)}
+              className="rounded-md px-3 py-1.5 text-xs font-medium text-slate-400 transition-colors hover:bg-slate-700 hover:text-white"
+            >
+              {editing ? "Cancel Edit" : "Edit"}
+            </button>
             <ReEnrichButton leadId={lead.id} leadName={lead.name} enrichedAt={lead.enriched_at ?? null} />
-            {lead.is_hot && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-900/50 px-3 py-1 text-xs font-medium text-amber-300">
-                <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M12.395 2.553a1 1 0 00-1.45-.385c-.345.23-.614.558-.822.88-.214.33-.403.713-.57 1.116-.334.804-.614 1.768-.84 2.734a31.365 31.365 0 00-.613 3.58 2.64 2.64 0 01-.945-1.067c-.328-.68-.398-1.534-.398-2.654A1 1 0 005.05 6.05 6.981 6.981 0 003 11a7 7 0 1011.95-4.95c-.592-.591-.98-.985-1.348-1.467-.363-.476-.724-1.063-1.207-2.03zM12.12 15.12A3 3 0 017 13s.879.5 2.5.5c0-1 .5-4 1.25-4.5.5 1 .786 1.293 1.371 1.879A2.99 2.99 0 0113 13a2.99 2.99 0 01-.879 2.121z" clipRule="evenodd" />
-                </svg>
-                HOT
-              </span>
-            )}
             {lead.priority && (
               <span
                 className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${
@@ -80,7 +84,7 @@ export function LeadHeader({ lead }: { lead: Lead }) {
         </div>
 
         {/* Contact info row */}
-        <div className="mt-4 flex flex-wrap gap-4 border-t border-slate-700 pt-4">
+        <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-700 pt-4">
           {lead.phone && (
             <a
               href={`tel:${lead.phone}`}
@@ -120,7 +124,7 @@ export function LeadHeader({ lead }: { lead: Lead }) {
 
         {/* Owner / Enrichment info */}
         {(lead.owner_name || lead.owner_email) && (
-          <div className="mt-3 flex flex-wrap items-center gap-4 rounded-md border border-emerald-800/40 bg-emerald-900/20 px-4 py-2.5">
+          <div className="mt-2 flex flex-wrap items-center gap-3 rounded-md border border-emerald-800/40 bg-emerald-900/20 px-4 py-2.5">
             <span className="text-xs font-medium uppercase text-emerald-400">Owner</span>
             {lead.owner_name && (
               <span className="text-sm text-white">{lead.owner_name}</span>
@@ -141,7 +145,7 @@ export function LeadHeader({ lead }: { lead: Lead }) {
 
         {/* Social links with follower counts */}
         {(lead.instagram || lead.tiktok || lead.facebook) && (
-          <div className="mt-3 flex flex-wrap gap-3">
+          <div className="mt-2 flex flex-wrap gap-2">
             {lead.instagram && (
               <a
                 href={
@@ -208,6 +212,11 @@ export function LeadHeader({ lead }: { lead: Lead }) {
           </div>
         )}
       </div>
+
+      {/* Inline edit form */}
+      {editing && (
+        <LeadEditForm lead={lead} onClose={() => setEditing(false)} />
+      )}
     </div>
   );
 }

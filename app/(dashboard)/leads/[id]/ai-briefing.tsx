@@ -22,8 +22,8 @@ export function AiBriefingSection({ lead }: { lead: Lead }) {
   const briefing = lead.ai_briefing;
 
   return (
-    <div className="rounded-lg border border-slate-700 bg-slate-800 p-5">
-      <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-400">
+    <div className="rounded-lg border border-slate-700 bg-slate-800 p-4">
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-400">
         AI Briefing
       </h2>
 
@@ -50,7 +50,7 @@ export function AiBriefingSection({ lead }: { lead: Lead }) {
           </p>
         </div>
       ) : (
-        <div className="space-y-5">
+        <div className="space-y-4">
           {/* Summary */}
           {briefing.summary && (
             <div>

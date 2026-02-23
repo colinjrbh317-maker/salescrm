@@ -8,6 +8,7 @@ import {
   PIPELINE_STAGE_COLORS,
 } from "@/lib/types";
 import { checkMissingData } from "@/lib/missing-data-check";
+import { scoreCurrentMoment } from "@/lib/call-timing";
 import SessionMissingData from "./session-missing-data";
 import SessionScriptDisplay from "./session-script-display";
 import SessionNotes from "./session-notes";
@@ -97,6 +98,14 @@ export default function SessionLeadCard({
 
   const warnings = checkMissingData(lead);
   const briefing = lead.ai_briefing;
+  const timing = scoreCurrentMoment(lead);
+
+  const TIMING_COLORS = {
+    emerald: "border-emerald-700/50 bg-emerald-900/20 text-emerald-400",
+    blue: "border-blue-700/50 bg-blue-900/20 text-blue-400",
+    amber: "border-amber-700/50 bg-amber-900/20 text-amber-400",
+    slate: "border-slate-600/50 bg-slate-700/20 text-slate-400",
+  } as const;
 
   async function handleLog() {
     if (!selectedOutcome) return;
@@ -111,7 +120,7 @@ export default function SessionLeadCard({
         {/* Business name + badges row */}
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <h2 className="text-2xl font-bold text-white">{lead.name}</h2>
+            <h2 className="text-lg font-semibold text-white">{lead.name}</h2>
 
             <div className="mt-1.5 flex flex-wrap items-center gap-2">
               {lead.priority && (
@@ -124,17 +133,25 @@ export default function SessionLeadCard({
                   {lead.priority}
                 </span>
               )}
-              {lead.is_hot && (
-                <span className="rounded bg-orange-500 px-2 py-0.5 text-xs font-semibold text-white">
-                  {"\uD83D\uDD25"} Hot
-                </span>
-              )}
               <span
                 className={`rounded px-2 py-0.5 text-xs font-medium ${
                   PIPELINE_STAGE_COLORS[lead.pipeline_stage]
                 }`}
               >
                 {PIPELINE_STAGE_LABELS[lead.pipeline_stage]}
+              </span>
+              {/* Call timing badge */}
+              <span
+                className={`rounded border px-2 py-0.5 text-xs font-medium ${
+                  TIMING_COLORS[timing.color]
+                }`}
+              >
+                {timing.label}
+                {timing.matchingWindow && (
+                  <span className="ml-1 opacity-60">
+                    {timing.matchingWindow.label}
+                  </span>
+                )}
               </span>
             </div>
           </div>
