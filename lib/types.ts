@@ -117,10 +117,23 @@ export interface Lead {
   close_amount: number | null;
   is_hot: boolean;
 
+  // LinkedIn
+  linkedin: string | null;
+  linkedin_company: string | null;
+
   // Enrichment
   owner_name: string | null;
   owner_email: string | null;
   enriched_at: string | null;
+  enrichment_log: EnrichmentLogEntry[] | null;
+
+  // Phase 1 Enrichment
+  google_place_id: string | null;
+  google_hours: GoogleHours | null;
+  tech_stack: string[] | null;
+  is_parked_domain: boolean | null;
+  review_sentiment: ReviewSentiment | null;
+  competitor_data: CompetitorEntry[] | null;
 
   // Notes
   notes: LeadNote[] | null;
@@ -140,6 +153,35 @@ export interface LeadNote {
   created_at: string;
   user_id: string;
   user_name: string;
+}
+
+export interface EnrichmentLogEntry {
+  step: string;
+  outcome: string;
+  detail: string | null;
+  timestamp: string;
+}
+
+export interface GoogleHours {
+  open_now?: boolean;
+  periods?: { open: { day: number; time: string }; close?: { day: number; time: string } }[];
+  weekday_text?: string[];
+}
+
+export interface ReviewSentiment {
+  average_rating: number;
+  total_reviews: number;
+  positive_themes: string[];
+  negative_themes: string[];
+  talking_points: string[];
+}
+
+export interface CompetitorEntry {
+  name: string;
+  rating: number | null;
+  review_count: number | null;
+  has_website: boolean;
+  address: string | null;
 }
 
 export interface AiBriefing {

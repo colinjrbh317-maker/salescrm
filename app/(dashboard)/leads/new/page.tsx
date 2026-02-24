@@ -32,6 +32,7 @@ export default function NewLeadPage() {
     instagram: "",
     tiktok: "",
     facebook: "",
+    linkedin: "",
     pipeline_stage: "cold" as PipelineStage,
   });
 
@@ -48,6 +49,19 @@ export default function NewLeadPage() {
 
     setSaving(true);
     setError(null);
+
+    // Check for duplicate by name
+    const { data: existing } = await supabase
+      .from("leads")
+      .select("id, name")
+      .ilike("name", form.name.trim())
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      setError(`A lead named "${existing[0].name}" already exists`);
+      setSaving(false);
+      return;
+    }
 
     const insertData: Record<string, unknown> = {
       name: form.name.trim(),
@@ -70,6 +84,7 @@ export default function NewLeadPage() {
     if (form.instagram.trim()) insertData.instagram = form.instagram.trim();
     if (form.tiktok.trim()) insertData.tiktok = form.tiktok.trim();
     if (form.facebook.trim()) insertData.facebook = form.facebook.trim();
+    if (form.linkedin.trim()) insertData.linkedin = form.linkedin.trim();
 
     const { data, error: insertError } = await supabase
       .from("leads")
@@ -251,7 +266,7 @@ export default function NewLeadPage() {
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-400">
               Social Media
             </h2>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className={LABEL_CLASS}>Instagram</label>
                 <input
@@ -279,6 +294,16 @@ export default function NewLeadPage() {
                   value={form.facebook}
                   onChange={(e) => update("facebook", e.target.value)}
                   placeholder="Page name or URL"
+                  className={INPUT_CLASS}
+                />
+              </div>
+              <div>
+                <label className={LABEL_CLASS}>LinkedIn</label>
+                <input
+                  type="text"
+                  value={form.linkedin}
+                  onChange={(e) => update("linkedin", e.target.value)}
+                  placeholder="Profile URL"
                   className={INPUT_CLASS}
                 />
               </div>

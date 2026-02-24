@@ -55,6 +55,7 @@ export default function SessionWork({
     session.outcomes_summary ?? {}
   );
   const [finished, setFinished] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const currentLead = leads[currentIndex] ?? null;
 
@@ -101,43 +102,53 @@ export default function SessionWork({
     async (outcome: Outcome, note: string | null) => {
       if (!currentLead) return;
 
+      setError(null);
       const supabase = createClient();
 
-      // Log the activity
-      await logActivity({
-        supabase,
-        leadId: currentLead.id,
-        userId,
-        activityType: SESSION_ACTIVITY_MAP[session.session_type],
-        channel: SESSION_CHANNEL_MAP[session.session_type],
-        outcome,
-        notes: note,
-      });
+      try {
+        // Log the activity
+        const result = await logActivity({
+          supabase,
+          leadId: currentLead.id,
+          userId,
+          activityType: SESSION_ACTIVITY_MAP[session.session_type],
+          channel: SESSION_CHANNEL_MAP[session.session_type],
+          outcome,
+          notes: note,
+        });
 
-      // Update local state
-      const newWorked = leadsWorked + 1;
-      const newStreak = streak + 1;
-      const newBestStreak = Math.max(bestStreak, newStreak);
-      const newOutcomes = {
-        ...outcomes,
-        [outcome]: (outcomes[outcome] ?? 0) + 1,
-      };
-      const nextIdx = currentIndex + 1;
+        if (!result.success) {
+          setError(`Failed to log activity: ${result.error}`);
+          return;
+        }
 
-      setLeadsWorked(newWorked);
-      setStreak(newStreak);
-      setBestStreak(newBestStreak);
-      setOutcomes(newOutcomes);
+        // Update local state
+        const newWorked = leadsWorked + 1;
+        const newStreak = streak + 1;
+        const newBestStreak = Math.max(bestStreak, newStreak);
+        const newOutcomes = {
+          ...outcomes,
+          [outcome]: (outcomes[outcome] ?? 0) + 1,
+        };
+        const nextIdx = currentIndex + 1;
 
-      // Update session in DB
-      await updateSessionInDb({
-        leads_worked: newWorked,
-        current_index: nextIdx,
-        outcomes_summary: newOutcomes,
-        streak_best: newBestStreak,
-      });
+        setLeadsWorked(newWorked);
+        setStreak(newStreak);
+        setBestStreak(newBestStreak);
+        setOutcomes(newOutcomes);
 
-      advanceToNext(nextIdx);
+        // Update session in DB
+        await updateSessionInDb({
+          leads_worked: newWorked,
+          current_index: nextIdx,
+          outcomes_summary: newOutcomes,
+          streak_best: newBestStreak,
+        });
+
+        advanceToNext(nextIdx);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Something went wrong logging the outcome. Try again.");
+      }
     },
     [
       currentLead,
@@ -186,6 +197,19 @@ export default function SessionWork({
 
   return (
     <div className="space-y-4">
+      {/* Error banner */}
+      {error && (
+        <div className="rounded-md border border-red-700 bg-red-900/30 px-4 py-2 text-sm text-red-300">
+          {error}
+          <button
+            onClick={() => setError(null)}
+            className="ml-3 text-xs text-red-400 underline hover:text-red-200"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Progress */}
       <SessionProgressBar
         currentIndex={currentIndex}

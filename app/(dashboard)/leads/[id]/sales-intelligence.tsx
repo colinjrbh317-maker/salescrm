@@ -58,6 +58,18 @@ export function SalesIntelligence({ lead }: { lead: Lead }) {
         Sales Intelligence
       </h2>
 
+      {/* Parked domain warning */}
+      {lead.is_parked_domain && (
+        <div className="mb-4 rounded-md border border-amber-700/50 bg-amber-900/20 px-3 py-2">
+          <p className="text-xs font-medium text-amber-400">
+            Parked / Placeholder Domain
+          </p>
+          <p className="mt-0.5 text-xs text-amber-300/70">
+            Website appears to be for sale, expired, or a placeholder. Great opportunity for web design pitch.
+          </p>
+        </div>
+      )}
+
       {/* Google presence */}
       {(lead.google_rating != null || lead.review_count != null) && (
         <div className="mb-4 rounded-md bg-slate-700/50 p-3">
@@ -80,6 +92,68 @@ export function SalesIntelligence({ lead }: { lead: Lead }) {
                 {lead.review_count} reviews
               </span>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Review Sentiment */}
+      {lead.review_sentiment && lead.review_sentiment.talking_points.length > 0 && (
+        <div className="mb-4 rounded-md bg-slate-700/50 p-3">
+          <p className="mb-2 text-xs font-medium text-slate-400">
+            Review Insights
+          </p>
+          {lead.review_sentiment.positive_themes.length > 0 && (
+            <div className="mb-2">
+              <div className="flex flex-wrap gap-1">
+                {lead.review_sentiment.positive_themes.map((theme, i) => (
+                  <span
+                    key={i}
+                    className="rounded-full bg-emerald-900/30 px-2 py-0.5 text-[10px] text-emerald-300"
+                  >
+                    {theme}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {lead.review_sentiment.negative_themes.length > 0 && (
+            <div className="mb-2">
+              <div className="flex flex-wrap gap-1">
+                {lead.review_sentiment.negative_themes.map((theme, i) => (
+                  <span
+                    key={i}
+                    className="rounded-full bg-red-900/30 px-2 py-0.5 text-[10px] text-red-300"
+                  >
+                    {theme}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="space-y-1.5">
+            {lead.review_sentiment.talking_points.map((point, i) => (
+              <p key={i} className="text-xs text-slate-300">
+                <span className="mr-1 text-blue-400">&#8226;</span>
+                {point}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Tech Stack */}
+      {lead.tech_stack && lead.tech_stack.length > 0 && (
+        <div className="mb-4">
+          <p className="mb-2 text-xs font-medium text-slate-400">Tech Stack</p>
+          <div className="flex flex-wrap gap-1">
+            {lead.tech_stack.map((tech, i) => (
+              <span
+                key={i}
+                className="rounded bg-indigo-900/30 px-2 py-0.5 text-xs text-indigo-300"
+              >
+                {tech}
+              </span>
+            ))}
           </div>
         </div>
       )}
@@ -139,6 +213,55 @@ export function SalesIntelligence({ lead }: { lead: Lead }) {
         <ScoreBar label="Mobile" value={lead.mobile_score} />
         <ScoreBar label="Presence" value={lead.presence_score} />
       </div>
+
+      {/* Competitors */}
+      {lead.competitor_data && lead.competitor_data.length > 0 && (
+        <div className="mt-4 border-t border-slate-700 pt-3">
+          <p className="mb-2 text-xs font-medium text-slate-400">
+            Local Competitors ({lead.competitor_data.length})
+          </p>
+          <div className="space-y-1.5">
+            {lead.competitor_data.map((comp, i) => (
+              <div
+                key={i}
+                className="flex items-center justify-between rounded bg-slate-700/50 px-2.5 py-1.5 text-xs"
+              >
+                <span className="truncate text-slate-300">{comp.name}</span>
+                <div className="flex items-center gap-2 text-slate-400">
+                  {comp.rating != null && (
+                    <span className="flex items-center gap-0.5">
+                      <svg className="h-3 w-3 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                      </svg>
+                      {comp.rating}
+                    </span>
+                  )}
+                  {comp.review_count != null && (
+                    <span>{comp.review_count} rev</span>
+                  )}
+                  <span className={comp.has_website ? "text-emerald-400" : "text-red-400"}>
+                    {comp.has_website ? "Web" : "No web"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Business Hours */}
+      {lead.google_hours?.weekday_text && lead.google_hours.weekday_text.length > 0 && (
+        <div className="mt-4 border-t border-slate-700 pt-3">
+          <p className="mb-2 text-xs font-medium text-slate-400">Business Hours</p>
+          <div className="space-y-0.5">
+            {lead.google_hours.weekday_text.map((day, i) => (
+              <p key={i} className="text-xs text-slate-400">
+                {day}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Sources */}
       {lead.sources && lead.sources.length > 0 && (

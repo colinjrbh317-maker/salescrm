@@ -6,10 +6,12 @@ import { useRouter } from "next/navigation";
 export function ReEnrichButton({ leadId, leadName, enrichedAt }: { leadId: string; leadName: string; enrichedAt: string | null }) {
   const [enriching, setEnriching] = useState(false);
   const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
   async function handleEnrich() {
     setEnriching(true);
+    setError(null);
     try {
       const res = await fetch("/api/enrich", {
         method: "POST",
@@ -17,14 +19,16 @@ export function ReEnrichButton({ leadId, leadName, enrichedAt }: { leadId: strin
         body: JSON.stringify({ leadIds: [leadId] }),
       });
       if (!res.ok) {
-        const err = await res.json();
-        console.error(`[Re-enrich] Failed for ${leadName}:`, err.error);
+        const err = await res.json().catch(() => ({ error: "Enrichment failed" }));
+        setError(err.error ?? "Enrichment failed");
+        setTimeout(() => setError(null), 5000);
       } else {
         setDone(true);
         setTimeout(() => setDone(false), 3000);
       }
-    } catch (error) {
-      console.error(`[Re-enrich] Network error:`, error);
+    } catch {
+      setError("Network error — could not enrich");
+      setTimeout(() => setError(null), 5000);
     }
     setEnriching(false);
     router.refresh();
@@ -35,9 +39,11 @@ export function ReEnrichButton({ leadId, leadName, enrichedAt }: { leadId: strin
       onClick={handleEnrich}
       disabled={enriching}
       className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-        done
-          ? "bg-emerald-600 text-white"
-          : "bg-yellow-600 text-white hover:bg-yellow-700"
+        error
+          ? "bg-red-600 text-white"
+          : done
+            ? "bg-emerald-600 text-white"
+            : "bg-yellow-600 text-white hover:bg-yellow-700"
       } disabled:opacity-50`}
     >
       {enriching ? (
@@ -47,6 +53,13 @@ export function ReEnrichButton({ leadId, leadName, enrichedAt }: { leadId: strin
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
           Enriching...
+        </>
+      ) : error ? (
+        <>
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+          </svg>
+          Failed
         </>
       ) : done ? (
         <>

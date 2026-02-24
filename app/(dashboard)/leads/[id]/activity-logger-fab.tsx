@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { logActivity } from "@/lib/activity-helpers";
 import type { ActivityType, Channel, Outcome } from "@/lib/types";
 import {
   ACTIVITY_TYPE_LABELS,
@@ -46,23 +47,17 @@ export function ActivityLoggerFab({ leadId, currentUserId }: ActivityLoggerFabPr
     setSubmitting(true);
     setSuccess(false);
 
-    const { error } = await supabase.from("activities").insert({
-      lead_id: leadId,
-      user_id: currentUserId,
-      activity_type: activityType,
-      channel: channel,
+    const result = await logActivity({
+      supabase,
+      leadId,
+      userId: currentUserId,
+      activityType,
+      channel,
       outcome: outcome || null,
       notes: notes || null,
-      is_private: false,
-      occurred_at: new Date().toISOString(),
     });
 
-    if (!error) {
-      await supabase
-        .from("leads")
-        .update({ last_contacted_at: new Date().toISOString() })
-        .eq("id", leadId);
-
+    if (result.success) {
       setSuccess(true);
       setNotes("");
       setOutcome("");

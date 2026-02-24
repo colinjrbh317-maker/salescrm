@@ -97,6 +97,7 @@ export function CadenceManager({
 }: CadenceManagerProps) {
   const [starting, setStarting] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const supabase = createClient();
 
@@ -125,9 +126,12 @@ export function CadenceManager({
       };
     });
 
-    const { error } = await supabase.from("cadences").insert(rows);
+    const { error: insertError } = await supabase.from("cadences").insert(rows);
 
-    if (!error) {
+    if (insertError) {
+      setError("Failed to start cadence — try again");
+      setTimeout(() => setError(null), 5000);
+    } else {
       router.refresh();
     }
 
@@ -140,13 +144,17 @@ export function CadenceManager({
 
   async function markCompleted(cadenceId: string) {
     setUpdatingId(cadenceId);
+    setError(null);
 
-    const { error } = await supabase
+    const { error: updateError } = await supabase
       .from("cadences")
       .update({ completed_at: new Date().toISOString() })
       .eq("id", cadenceId);
 
-    if (!error) {
+    if (updateError) {
+      setError("Failed to mark step as done");
+      setTimeout(() => setError(null), 5000);
+    } else {
       router.refresh();
     }
     setUpdatingId(null);
@@ -158,13 +166,17 @@ export function CadenceManager({
 
   async function markSkipped(cadenceId: string) {
     setUpdatingId(cadenceId);
+    setError(null);
 
-    const { error } = await supabase
+    const { error: updateError } = await supabase
       .from("cadences")
       .update({ skipped: true })
       .eq("id", cadenceId);
 
-    if (!error) {
+    if (updateError) {
+      setError("Failed to skip step");
+      setTimeout(() => setError(null), 5000);
+    } else {
       router.refresh();
     }
     setUpdatingId(null);
@@ -225,9 +237,16 @@ export function CadenceManager({
   // Render: Template Selector (no active cadence)
   // ==========================================================
 
+  const errorBanner = error ? (
+    <div className="mb-3 rounded-md border border-red-700 bg-red-900/30 px-4 py-2 text-sm text-red-300">
+      {error}
+    </div>
+  ) : null;
+
   if (!hasActiveCadence) {
     return (
       <div className="rounded-lg border border-slate-700 bg-slate-800 p-4">
+        {errorBanner}
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-400">
           Start a Cadence
         </h2>
@@ -298,6 +317,7 @@ export function CadenceManager({
 
   return (
     <div className="rounded-lg border border-slate-700 bg-slate-800 p-4">
+      {errorBanner}
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
           Active Cadence

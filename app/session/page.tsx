@@ -21,6 +21,15 @@ export default async function SessionPage() {
     .eq("id", user.id)
     .single<Profile>();
 
+  // Clean up abandoned sessions (active for >24h)
+  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  await supabase
+    .from("sessions")
+    .update({ status: "completed", ended_at: new Date().toISOString() })
+    .eq("user_id", user.id)
+    .eq("status", "active")
+    .lt("started_at", twentyFourHoursAgo);
+
   // Check for active session
   const { data: activeSession } = await supabase
     .from("sessions")
@@ -53,6 +62,34 @@ export default async function SessionPage() {
 
     // Fetch scripts for leads that have cadences with script_ids
     const scripts: Record<string, string> = {};
+    if (leadIds.length > 0) {
+      const { data: cadencesWithScripts } = await supabase
+        .from("cadences")
+        .select("lead_id, script_id")
+        .in("lead_id", leadIds)
+        .not("script_id", "is", null);
+
+      if (cadencesWithScripts && cadencesWithScripts.length > 0) {
+        const scriptIds = [
+          ...new Set(cadencesWithScripts.map((c) => c.script_id).filter(Boolean)),
+        ];
+        if (scriptIds.length > 0) {
+          const { data: scriptRows } = await supabase
+            .from("scripts")
+            .select("id, content")
+            .in("id", scriptIds);
+
+          if (scriptRows) {
+            const scriptMap = new Map(scriptRows.map((s) => [s.id, s.content]));
+            for (const c of cadencesWithScripts) {
+              if (c.script_id && scriptMap.has(c.script_id)) {
+                scripts[c.lead_id] = scriptMap.get(c.script_id)!;
+              }
+            }
+          }
+        }
+      }
+    }
 
     return (
       <div className="mx-auto max-w-3xl px-4 py-6">

@@ -67,6 +67,7 @@ export function PipelineBoard({ leads, currentUserId }: PipelineBoardProps) {
   const [closeReason, setCloseReason] = useState("");
   const [closeAmount, setCloseAmount] = useState("");
   const [movingId, setMovingId] = useState<string | null>(null);
+  const [moveError, setMoveError] = useState<string | null>(null);
   const [dragOverStage, setDragOverStage] = useState<PipelineStage | null>(null);
   const [dragOverPosition, setDragOverPosition] = useState<{ stage: PipelineStage; index: number } | null>(null);
   const dragLeadRef = useRef<Lead | null>(null);
@@ -87,33 +88,41 @@ export function PipelineBoard({ leads, currentUserId }: PipelineBoardProps) {
     }
 
     setMovingId(lead.id);
+    setMoveError(null);
 
-    // Record pipeline history
-    await supabase.from("pipeline_history").insert({
-      lead_id: lead.id,
-      user_id: currentUserId,
-      from_stage: lead.pipeline_stage,
-      to_stage: toStage,
-    });
+    try {
+      // Record pipeline history
+      const { error: histErr } = await supabase.from("pipeline_history").insert({
+        lead_id: lead.id,
+        user_id: currentUserId,
+        from_stage: lead.pipeline_stage,
+        to_stage: toStage,
+      });
+      if (histErr) throw histErr;
 
-    // Update the lead
-    await supabase
-      .from("leads")
-      .update({ pipeline_stage: toStage })
-      .eq("id", lead.id);
+      // Update the lead
+      const { error: updateErr } = await supabase
+        .from("leads")
+        .update({ pipeline_stage: toStage })
+        .eq("id", lead.id);
+      if (updateErr) throw updateErr;
 
-    // Log a stage_change activity
-    await supabase.from("activities").insert({
-      lead_id: lead.id,
-      user_id: currentUserId,
-      activity_type: "stage_change",
-      channel: "other",
-      notes: `Moved from ${PIPELINE_STAGE_LABELS[lead.pipeline_stage]} to ${PIPELINE_STAGE_LABELS[toStage]}`,
-      is_private: false,
-      occurred_at: new Date().toISOString(),
-    });
+      // Log a stage_change activity
+      await supabase.from("activities").insert({
+        lead_id: lead.id,
+        user_id: currentUserId,
+        activity_type: "stage_change",
+        channel: "other",
+        notes: `Moved from ${PIPELINE_STAGE_LABELS[lead.pipeline_stage]} to ${PIPELINE_STAGE_LABELS[toStage]}`,
+        is_private: false,
+        occurred_at: new Date().toISOString(),
+      });
 
-    router.refresh();
+      router.refresh();
+    } catch {
+      setMoveError(`Failed to move ${lead.name} to ${PIPELINE_STAGE_LABELS[toStage]}`);
+      setTimeout(() => setMoveError(null), 5000);
+    }
     setMovingId(null);
   }
 
@@ -121,40 +130,49 @@ export function PipelineBoard({ leads, currentUserId }: PipelineBoardProps) {
     if (!closingLead) return;
 
     setMovingId(closingLead.id);
+    setMoveError(null);
 
-    // Record pipeline history
-    await supabase.from("pipeline_history").insert({
-      lead_id: closingLead.id,
-      user_id: currentUserId,
-      from_stage: closingLead.pipeline_stage,
-      to_stage: closeStage,
-      reason: closeReason || null,
-    });
+    try {
+      // Record pipeline history
+      const { error: histErr } = await supabase.from("pipeline_history").insert({
+        lead_id: closingLead.id,
+        user_id: currentUserId,
+        from_stage: closingLead.pipeline_stage,
+        to_stage: closeStage,
+        reason: closeReason || null,
+      });
+      if (histErr) throw histErr;
 
-    // Update the lead
-    await supabase
-      .from("leads")
-      .update({
-        pipeline_stage: closeStage,
-        closed_at: new Date().toISOString(),
-        close_reason: closeReason || null,
-        close_amount: closeAmount ? parseFloat(closeAmount) : null,
-      })
-      .eq("id", closingLead.id);
+      // Update the lead
+      const { error: updateErr } = await supabase
+        .from("leads")
+        .update({
+          pipeline_stage: closeStage,
+          closed_at: new Date().toISOString(),
+          close_reason: closeReason || null,
+          close_amount: closeAmount ? parseFloat(closeAmount) : null,
+        })
+        .eq("id", closingLead.id);
+      if (updateErr) throw updateErr;
 
-    // Log activity
-    await supabase.from("activities").insert({
-      lead_id: closingLead.id,
-      user_id: currentUserId,
-      activity_type: "stage_change",
-      channel: "other",
-      notes: `${closeStage === "closed_won" ? "Won" : "Lost"}: ${closeReason || "No reason provided"}${closeAmount ? ` ($${closeAmount})` : ""}`,
-      is_private: false,
-      occurred_at: new Date().toISOString(),
-    });
+      // Log activity
+      await supabase.from("activities").insert({
+        lead_id: closingLead.id,
+        user_id: currentUserId,
+        activity_type: "stage_change",
+        channel: "other",
+        notes: `${closeStage === "closed_won" ? "Won" : "Lost"}: ${closeReason || "No reason provided"}${closeAmount ? ` ($${closeAmount})` : ""}`,
+        is_private: false,
+        occurred_at: new Date().toISOString(),
+      });
 
-    setClosingLead(null);
-    router.refresh();
+      setClosingLead(null);
+      router.refresh();
+    } catch {
+      setMoveError(`Failed to close ${closingLead.name}`);
+      setClosingLead(null);
+      setTimeout(() => setMoveError(null), 5000);
+    }
     setMovingId(null);
   }
 
@@ -228,6 +246,16 @@ export function PipelineBoard({ leads, currentUserId }: PipelineBoardProps) {
 
   return (
     <>
+      {/* Move error banner */}
+      {moveError && (
+        <div className="mb-4 rounded-md border border-red-700 bg-red-900/30 px-4 py-2 text-sm text-red-300">
+          {moveError}
+          <button onClick={() => setMoveError(null)} className="ml-3 text-xs text-red-400 underline hover:text-red-200">
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Pipeline Filters */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <input

@@ -37,6 +37,7 @@ export function LeadEditForm({ lead, onClose }: LeadEditFormProps) {
     instagram: lead.instagram ?? "",
     tiktok: lead.tiktok ?? "",
     facebook: lead.facebook ?? "",
+    linkedin: lead.linkedin ?? "",
     pipeline_stage: lead.pipeline_stage,
   });
 
@@ -70,6 +71,7 @@ export function LeadEditForm({ lead, onClose }: LeadEditFormProps) {
       instagram: form.instagram.trim() || null,
       tiktok: form.tiktok.trim() || null,
       facebook: form.facebook.trim() || null,
+      linkedin: form.linkedin.trim() || null,
     };
 
     const { error: updateError } = await supabase
@@ -249,7 +251,7 @@ export function LeadEditForm({ lead, onClose }: LeadEditFormProps) {
           <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
             Social Media
           </h3>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className={LABEL_CLASS}>Instagram</label>
               <input
@@ -277,6 +279,16 @@ export function LeadEditForm({ lead, onClose }: LeadEditFormProps) {
                 value={form.facebook}
                 onChange={(e) => update("facebook", e.target.value)}
                 placeholder="Page name"
+                className={INPUT_CLASS}
+              />
+            </div>
+            <div>
+              <label className={LABEL_CLASS}>LinkedIn</label>
+              <input
+                type="text"
+                value={form.linkedin}
+                onChange={(e) => update("linkedin", e.target.value)}
+                placeholder="Profile URL"
                 className={INPUT_CLASS}
               />
             </div>

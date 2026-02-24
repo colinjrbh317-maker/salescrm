@@ -8,6 +8,7 @@ import { CadenceManager } from "./cadence-manager";
 import { LeadHeader } from "./lead-header";
 import { BestTimeToCall } from "./best-time-to-call";
 import { LeadDetailTabs } from "./lead-detail-tabs";
+import { EnrichmentLog } from "./enrichment-log";
 import { ActivityLoggerFab } from "./activity-logger-fab";
 
 interface Props {
@@ -47,11 +48,20 @@ export default async function LeadDetailPage({ params }: Props) {
     .eq("lead_id", id)
     .order("step_number", { ascending: true });
 
+  // Fetch team members for assignment
+  const { data: teamMembers } = await supabase
+    .from("profiles")
+    .select("id, full_name");
+
   const notes = ((lead as Lead).notes as LeadNote[] | null) ?? [];
 
   return (
     <div className="mx-auto max-w-7xl">
-      <LeadHeader lead={lead as Lead} />
+      <LeadHeader
+        lead={lead as Lead}
+        currentUserId={user?.id ?? ""}
+        teamMembers={teamMembers ?? []}
+      />
 
       <LeadDetailTabs
         overview={
@@ -104,6 +114,9 @@ export default async function LeadDetailPage({ params }: Props) {
                 </div>
               </div>
             )}
+
+            {/* Enrichment Log */}
+            <EnrichmentLog lead={lead as Lead} />
           </>
         }
         activity={

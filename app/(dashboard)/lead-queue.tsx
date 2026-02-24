@@ -269,7 +269,7 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
     router.refresh();
   }
 
-  async function handleBulkAssign(assignToId: string) {
+  async function handleBulkAssign(assignToId: string | null) {
     for (const id of selectedIds) {
       await supabase
         .from("leads")
@@ -531,6 +531,12 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
             Assign
           </button>
           <button
+            onClick={() => handleBulkAssign(null)}
+            className="rounded-md border border-slate-500 bg-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-600 hover:text-white"
+          >
+            Unassign
+          </button>
+          <button
             onClick={() => setShowDeleteConfirm(true)}
             className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700"
           >
@@ -750,6 +756,17 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
               Assign {selectedIds.size} Lead{selectedIds.size > 1 ? "s" : ""}
             </h3>
             <div className="mt-3 space-y-2">
+              <button
+                onClick={() => handleBulkAssign(null)}
+                className="flex w-full items-center gap-3 rounded-md border border-slate-500 bg-slate-700/50 px-4 py-2.5 text-left text-sm text-slate-300 transition-colors hover:border-amber-500 hover:bg-slate-600 hover:text-white"
+              >
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-600 text-xs text-slate-400">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M22 10.5h-6m-2.25-4.125a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0ZM4 19.235v-.11a6.375 6.375 0 0 1 12.75 0v.109A12.318 12.318 0 0 1 10.374 21c-2.331 0-4.512-.645-6.374-1.766Z" />
+                  </svg>
+                </span>
+                <span>Unassign</span>
+              </button>
               {teamMembers.map((member) => (
                 <button
                   key={member.id}

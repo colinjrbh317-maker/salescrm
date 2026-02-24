@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import type { Lead } from "@/lib/types";
 import {
   PIPELINE_STAGE_LABELS,
@@ -11,19 +12,91 @@ import {
 import { ReEnrichButton } from "./re-enrich-button";
 import { LeadEditForm } from "./lead-edit-form";
 
-export function LeadHeader({ lead }: { lead: Lead }) {
+interface LeadHeaderProps {
+  lead: Lead;
+  currentUserId?: string;
+  teamMembers?: { id: string; full_name: string | null }[];
+}
+
+function getInitials(name: string | null): string {
+  if (!name) return "?";
+  return name
+    .split(" ")
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+}
+
+export function LeadHeader({ lead, currentUserId, teamMembers = [] }: LeadHeaderProps) {
   const [editing, setEditing] = useState(false);
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const router = useRouter();
+  const supabase = createClient();
+
+  const assignedMember = teamMembers.find((m) => m.id === lead.assigned_to);
+
+  async function handleAssign(assignToId: string | null) {
+    await supabase
+      .from("leads")
+      .update({ assigned_to: assignToId })
+      .eq("id", lead.id);
+    setShowAssignModal(false);
+    router.refresh();
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const response = await fetch("/api/leads/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leadIds: [lead.id] }),
+      });
+      if (response.ok) {
+        router.push("/");
+      } else {
+        const err = await response.json().catch(() => ({ error: "Delete failed" }));
+        setDeleteError(err.error ?? "Failed to delete lead");
+        setShowDeleteConfirm(false);
+      }
+    } catch (error) {
+      setDeleteError("Network error — could not delete lead");
+      setShowDeleteConfirm(false);
+    }
+    setDeleting(false);
+  }
 
   return (
     <div>
-      {/* Breadcrumb */}
+      {/* Back + Breadcrumb */}
       <nav className="mb-4 flex items-center gap-2 text-sm text-slate-400">
-        <Link href="/" className="hover:text-slate-200">
-          Dashboard
-        </Link>
+        <button
+          onClick={() => router.back()}
+          className="flex items-center gap-1 text-slate-400 transition-colors hover:text-slate-200"
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+          </svg>
+          Back
+        </button>
         <span>/</span>
         <span className="text-slate-200">{lead.name}</span>
       </nav>
+
+      {/* Delete error banner */}
+      {deleteError && (
+        <div className="mb-3 rounded-md border border-red-700 bg-red-900/30 px-4 py-2 text-sm text-red-300">
+          {deleteError}
+          <button onClick={() => setDeleteError(null)} className="ml-3 text-xs text-red-400 underline hover:text-red-200">
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Header card */}
       <div className="rounded-lg border border-slate-700 bg-slate-800 p-4">
@@ -63,6 +136,18 @@ export function LeadHeader({ lead }: { lead: Lead }) {
               {editing ? "Cancel Edit" : "Edit"}
             </button>
             <ReEnrichButton leadId={lead.id} leadName={lead.name} enrichedAt={lead.enriched_at ?? null} />
+            <button
+              onClick={() => setShowAssignModal(true)}
+              className="rounded-md px-3 py-1.5 text-xs font-medium text-slate-400 transition-colors hover:bg-slate-700 hover:text-white"
+            >
+              {assignedMember ? `Assigned: ${assignedMember.full_name}` : "Assign"}
+            </button>
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="rounded-md px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-900/30 hover:text-red-300"
+            >
+              Delete
+            </button>
             {lead.priority && (
               <span
                 className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${
@@ -144,7 +229,7 @@ export function LeadHeader({ lead }: { lead: Lead }) {
         )}
 
         {/* Social links with follower counts */}
-        {(lead.instagram || lead.tiktok || lead.facebook) && (
+        {(lead.instagram || lead.tiktok || lead.facebook || lead.linkedin || lead.linkedin_company) && (
           <div className="mt-2 flex flex-wrap gap-2">
             {lead.instagram && (
               <a
@@ -209,6 +294,34 @@ export function LeadHeader({ lead }: { lead: Lead }) {
                 )}
               </a>
             )}
+            {lead.linkedin && (
+              <a
+                href={
+                  lead.linkedin.startsWith("http")
+                    ? lead.linkedin
+                    : `https://linkedin.com/in/${lead.linkedin}`
+                }
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-blue-400"
+              >
+                LinkedIn
+              </a>
+            )}
+            {lead.linkedin_company && (
+              <a
+                href={
+                  lead.linkedin_company.startsWith("http")
+                    ? lead.linkedin_company
+                    : `https://linkedin.com/company/${lead.linkedin_company}`
+                }
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-blue-400"
+              >
+                LinkedIn (Company)
+              </a>
+            )}
           </div>
         )}
       </div>
@@ -216,6 +329,89 @@ export function LeadHeader({ lead }: { lead: Lead }) {
       {/* Inline edit form */}
       {editing && (
         <LeadEditForm lead={lead} onClose={() => setEditing(false)} />
+      )}
+
+      {/* Assign Modal */}
+      {showAssignModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="w-full max-w-sm rounded-lg border border-slate-600 bg-slate-800 p-6">
+            <h3 className="text-lg font-semibold text-white">
+              Assign {lead.name}
+            </h3>
+            <div className="mt-3 space-y-2">
+              <button
+                onClick={() => handleAssign(null)}
+                className="flex w-full items-center gap-3 rounded-md border border-slate-500 bg-slate-700/50 px-4 py-2.5 text-left text-sm text-slate-300 transition-colors hover:border-amber-500 hover:bg-slate-600 hover:text-white"
+              >
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-600 text-xs text-slate-400">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M22 10.5h-6m-2.25-4.125a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0ZM4 19.235v-.11a6.375 6.375 0 0 1 12.75 0v.109A12.318 12.318 0 0 1 10.374 21c-2.331 0-4.512-.645-6.374-1.766Z" />
+                  </svg>
+                </span>
+                <span>Unassign</span>
+              </button>
+              {teamMembers.map((member) => (
+                <button
+                  key={member.id}
+                  onClick={() => handleAssign(member.id)}
+                  className={`flex w-full items-center gap-3 rounded-md border px-4 py-2.5 text-left text-sm text-white transition-colors hover:border-blue-500 hover:bg-slate-600 ${
+                    member.id === lead.assigned_to
+                      ? "border-blue-500 bg-slate-600"
+                      : "border-slate-600 bg-slate-700"
+                  }`}
+                >
+                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">
+                    {getInitials(member.full_name)}
+                  </span>
+                  <span>{member.full_name ?? "Unknown"}</span>
+                  {member.id === lead.assigned_to && (
+                    <span className="ml-auto text-xs text-blue-400">current</span>
+                  )}
+                  {member.id === currentUserId && member.id !== lead.assigned_to && (
+                    <span className="ml-auto text-xs text-slate-400">(you)</span>
+                  )}
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => setShowAssignModal(false)}
+                className="rounded-md px-4 py-2 text-sm text-slate-400 hover:text-slate-200"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="w-full max-w-sm rounded-lg border border-slate-600 bg-slate-800 p-6">
+            <h3 className="text-lg font-semibold text-white">Delete Lead</h3>
+            <p className="mt-2 text-sm text-slate-400">
+              Are you sure you want to permanently delete{" "}
+              <span className="font-medium text-white">{lead.name}</span>?
+              This cannot be undone.
+            </p>
+            <div className="mt-4 flex justify-end gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="rounded-md px-4 py-2 text-sm text-slate-400 hover:text-slate-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {deleting ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
