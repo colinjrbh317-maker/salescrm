@@ -1,5 +1,4 @@
 import { createClient } from "@/lib/supabase/server";
-import { redirect } from "next/navigation";
 import {
   PIPELINE_STAGES,
   PIPELINE_STAGE_LABELS,
@@ -21,17 +20,15 @@ function daysBetween(a: string, b: string): number {
 export default async function AnalyticsPage() {
   const supabase = await createClient();
 
-  // Admin gate
+  // Fetch current user + role (for admin-only sections)
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const userId = user?.id ?? "";
 
-  const { data: currentProfile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
+  const { data: currentProfile } = userId
+    ? await supabase.from("profiles").select("role").eq("id", userId).single()
+    : { data: null };
 
-  if (currentProfile?.role !== "admin") redirect("/");
+  const isAdmin = currentProfile?.role === "admin";
 
   // ----------------------------------------------------------
   // 1. Fetch all leads for pipeline data
@@ -243,11 +240,13 @@ export default async function AnalyticsPage() {
   // 7. Team Activity Feed (admin-only — shows all activities)
   // ----------------------------------------------------------
 
-  const { data: teamActivities } = await supabase
-    .from("activities")
-    .select("id, user_id, lead_id, activity_type, channel, outcome, notes, occurred_at, is_private")
-    .order("occurred_at", { ascending: false })
-    .limit(100);
+  const teamActivities = isAdmin
+    ? (await supabase
+        .from("activities")
+        .select("id, user_id, lead_id, activity_type, channel, outcome, notes, occurred_at, is_private")
+        .order("occurred_at", { ascending: false })
+        .limit(100)).data
+    : null;
 
   // Build lookup maps
   const leadNameMap: Record<string, string> = {};
@@ -345,12 +344,12 @@ export default async function AnalyticsPage() {
 
       {(() => {
         const myActivitiesThisWeek = thisWeekActivities.filter(
-          (a) => (a as { user_id?: string }).user_id === user.id
+          (a) => (a as { user_id?: string }).user_id === userId
         ).length;
         const myActivitiesLastWeek = lastWeekActivities.filter(
-          (a) => (a as { user_id?: string }).user_id === user.id
+          (a) => (a as { user_id?: string }).user_id === userId
         ).length;
-        const myLeads = leads?.filter((l) => l.assigned_to === user.id) ?? [];
+        const myLeads = leads?.filter((l) => l.assigned_to === userId) ?? [];
         const myClosedWon = myLeads.filter((l) => l.pipeline_stage === "closed_won").length;
         const myRevenue = myLeads.reduce((sum, l) => sum + (l.close_amount ?? 0), 0);
 
@@ -781,6 +780,7 @@ export default async function AnalyticsPage() {
       {/* Team Activity Feed (admin-only) */}
       {/* ====================================================== */}
 
+      {isAdmin && (
       <div className="rounded-lg border border-slate-700 bg-slate-800 p-5">
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-400">
           Team Activity Feed (Last 100)
@@ -856,6 +856,7 @@ export default async function AnalyticsPage() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }
