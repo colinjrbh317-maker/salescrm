@@ -242,7 +242,7 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
   }
 
   async function handleEnrichAll() {
-    const unenriched = leads.filter((l) => !l.enriched_at);
+    const unenriched = filteredLeads.filter((l) => !l.enriched_at);
     if (unenriched.length === 0) return;
 
     setEnriching(true);
@@ -598,14 +598,14 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
           </button>
         )}
 
-        {leads.some((l) => !l.enriched_at) && (
+        {activeTab === "my" && filteredLeads.some((l) => !l.enriched_at) && (
           <button
             onClick={handleEnrichAll}
             disabled={enriching}
             className="whitespace-nowrap rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-            title="Enrich all leads that haven't been enriched yet"
+            title="Enrich all unenriched leads in My Leads"
           >
-            {enriching ? "..." : `Enrich All (${leads.filter((l) => !l.enriched_at).length})`}
+            {enriching ? "..." : `Enrich All (${filteredLeads.filter((l) => !l.enriched_at).length})`}
           </button>
         )}
 
