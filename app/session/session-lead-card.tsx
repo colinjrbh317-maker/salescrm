@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { Lead, Outcome } from "@/lib/types";
 import {
   PRIORITY_COLORS,
@@ -96,9 +96,35 @@ export default function SessionLeadCard({
   const [showBriefing, setShowBriefing] = useState(false);
   const [showScript, setShowScript] = useState(false);
 
+  const [copied, setCopied] = useState(false);
   const warnings = checkMissingData(lead);
   const briefing = lead.ai_briefing;
   const timing = scoreCurrentMoment(lead);
+
+  const copyPhone = useCallback(() => {
+    if (!lead.phone) return;
+    navigator.clipboard.writeText(lead.phone);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [lead.phone]);
+
+  // Keyboard shortcuts: 1-4 = outcomes, S = skip, Enter = log
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      // Ignore if user is typing in an input/textarea
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+      if (e.key === "1") { setSelectedOutcome("connected"); }
+      else if (e.key === "2") { setSelectedOutcome("voicemail"); }
+      else if (e.key === "3") { setSelectedOutcome("no_answer"); }
+      else if (e.key === "4") { setSelectedOutcome("not_interested"); }
+      else if (e.key === "s" || e.key === "S") { e.preventDefault(); onSkip(); }
+      else if (e.key === "Enter" && selectedOutcome && !submitting) { e.preventDefault(); handleLog(); }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedOutcome, submitting, onSkip]);
 
   const TIMING_COLORS = {
     emerald: "border-emerald-700/50 bg-emerald-900/20 text-emerald-400",
@@ -140,6 +166,20 @@ export default function SessionLeadCard({
               >
                 {PIPELINE_STAGE_LABELS[lead.pipeline_stage]}
               </span>
+              {/* Composite score badge */}
+              {lead.composite_score != null && (
+                <span
+                  className={`rounded px-2 py-0.5 text-xs font-bold ${
+                    lead.composite_score >= 70
+                      ? "bg-emerald-900/50 text-emerald-400"
+                      : lead.composite_score >= 40
+                      ? "bg-amber-900/50 text-amber-400"
+                      : "bg-red-900/50 text-red-400"
+                  }`}
+                >
+                  {lead.composite_score}
+                </span>
+              )}
               {/* Call timing badge */}
               <span
                 className={`rounded border px-2 py-0.5 text-xs font-medium ${
@@ -212,25 +252,42 @@ export default function SessionLeadCard({
         {/* ---- CONTACT INFO (prominent) ---- */}
         <div className="mt-3 flex flex-wrap gap-3">
           {lead.phone && (
-            <a
-              href={`tel:${lead.phone}`}
-              className="flex items-center gap-1.5 rounded-md border border-slate-600 bg-slate-700/50 px-3 py-2 text-sm font-medium text-blue-400 transition hover:bg-slate-700 hover:text-blue-300"
-            >
-              <svg
-                className="h-4 w-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                strokeWidth={1.5}
-                stroke="currentColor"
+            <div className="flex items-center gap-1">
+              <a
+                href={`tel:${lead.phone}`}
+                className="flex items-center gap-1.5 rounded-md border border-slate-600 bg-slate-700/50 px-3 py-2 text-sm font-medium text-blue-400 transition hover:bg-slate-700 hover:text-blue-300"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 0 0 2.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 0 1-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 0 0-1.091-.852H4.5A2.25 2.25 0 0 0 2.25 4.5v2.25Z"
-                />
-              </svg>
-              {lead.phone}
-            </a>
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth={1.5}
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 0 0 2.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 0 1-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 0 0-1.091-.852H4.5A2.25 2.25 0 0 0 2.25 4.5v2.25Z"
+                  />
+                </svg>
+                {lead.phone}
+              </a>
+              <button
+                onClick={copyPhone}
+                className="rounded-md border border-slate-600 bg-slate-700/50 p-2 text-slate-400 transition hover:bg-slate-700 hover:text-white"
+                title="Copy phone number"
+              >
+                {copied ? (
+                  <svg className="h-4 w-4 text-emerald-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                  </svg>
+                ) : (
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" />
+                  </svg>
+                )}
+              </button>
+            </div>
           )}
           {lead.email && (
             <a
@@ -425,7 +482,7 @@ export default function SessionLeadCard({
         <h3 className="text-sm font-semibold text-slate-300">Log Outcome</h3>
 
         <div className="grid grid-cols-2 gap-2">
-          {QUICK_OUTCOMES.map((qo) => (
+          {QUICK_OUTCOMES.map((qo, idx) => (
             <button
               key={qo.outcome}
               onClick={() => setSelectedOutcome(qo.outcome)}
@@ -437,6 +494,7 @@ export default function SessionLeadCard({
                   : ""
               }`}
             >
+              <span className="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded bg-black/20 text-xs font-mono">{idx + 1}</span>
               {qo.label}
             </button>
           ))}
@@ -455,6 +513,7 @@ export default function SessionLeadCard({
             onClick={onSkip}
             className="flex-1 rounded-lg border border-slate-600 bg-slate-700 py-2.5 text-sm font-medium text-slate-300 transition hover:bg-slate-600"
           >
+            <span className="mr-1.5 inline-flex items-center justify-center rounded bg-black/20 px-1 py-0.5 text-[10px] font-mono">S</span>
             Skip
           </button>
           <button
@@ -462,7 +521,12 @@ export default function SessionLeadCard({
             disabled={!selectedOutcome || submitting}
             className="flex-1 rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:opacity-50"
           >
-            {submitting ? "Logging..." : "Log \u2192"}
+            {submitting ? "Logging..." : (
+              <>
+                Log
+                <span className="ml-1.5 inline-flex items-center justify-center rounded bg-black/20 px-1 py-0.5 text-[10px] font-mono">{"\u21B5"}</span>
+              </>
+            )}
           </button>
         </div>
       </div>

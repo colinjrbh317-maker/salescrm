@@ -181,6 +181,25 @@ export function ActivityLoggerFab({ leadId, currentUserId }: ActivityLoggerFabPr
                   <label className="mb-1 block text-xs font-medium text-slate-400">
                     Notes
                   </label>
+                  <div className="mb-1.5 flex flex-wrap gap-1">
+                    {[
+                      "Left voicemail, will follow up",
+                      "Spoke with owner, interested",
+                      "Not a good fit right now",
+                      "Asked to call back later",
+                      "Sent info via email",
+                      "No answer, try again tomorrow",
+                    ].map((template) => (
+                      <button
+                        key={template}
+                        type="button"
+                        onClick={() => setNotes(notes ? `${notes}. ${template}` : template)}
+                        className="rounded border border-slate-600 bg-slate-700/50 px-2 py-0.5 text-[10px] text-slate-400 transition hover:border-emerald-600 hover:text-emerald-300"
+                      >
+                        {template}
+                      </button>
+                    ))}
+                  </div>
                   <textarea
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}

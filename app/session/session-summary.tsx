@@ -160,13 +160,43 @@ export default function SessionSummary({
         </div>
       )}
 
-      {/* Return button */}
-      <Link
-        href="/"
-        className="block w-full rounded-lg bg-blue-600 py-3 text-center text-sm font-semibold text-white transition hover:bg-blue-500"
-      >
-        Return to Dashboard
-      </Link>
+      {/* Export + Return */}
+      <div className="space-y-3">
+        <button
+          onClick={() => {
+            const rows = [
+              ["Metric", "Value"],
+              ["Session Type", sessionType],
+              ["Duration", `${mins}m ${secs}s`],
+              ["Leads Worked", String(leadsWorked)],
+              ["Leads Skipped", String(leadsSkipped)],
+              ["Total Leads", String(totalLeads)],
+              ["Best Streak", String(bestStreak)],
+              ...Object.entries(outcomes).map(([k, v]) => [
+                OUTCOME_LABELS[k as keyof typeof OUTCOME_LABELS] ?? k,
+                String(v),
+              ]),
+            ];
+            const csv = rows.map((r) => r.join(",")).join("\n");
+            const blob = new Blob([csv], { type: "text/csv" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `session-${new Date().toISOString().slice(0, 10)}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+          }}
+          className="block w-full rounded-lg border border-slate-600 bg-slate-700 py-3 text-center text-sm font-medium text-slate-300 transition hover:bg-slate-600 hover:text-white"
+        >
+          Export CSV
+        </button>
+        <Link
+          href="/"
+          className="block w-full rounded-lg bg-blue-600 py-3 text-center text-sm font-semibold text-white transition hover:bg-blue-500"
+        >
+          Return to Dashboard
+        </Link>
+      </div>
     </div>
   );
 }

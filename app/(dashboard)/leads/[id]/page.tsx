@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
-import type { Lead, Activity, Cadence, LeadNote } from "@/lib/types";
+import type { Lead, Activity, Cadence, LeadNote, ActivityType } from "@/lib/types";
+import { ACTIVITY_TYPE_LABELS } from "@/lib/types";
 import { SalesIntelligence } from "./sales-intelligence";
 import { AiBriefingSection } from "./ai-briefing";
 import { ActivityTimeline } from "./activity-timeline";
@@ -55,6 +56,21 @@ export default async function LeadDetailPage({ params }: Props) {
 
   const notes = ((lead as Lead).notes as LeadNote[] | null) ?? [];
 
+  // Find next due cadence step for "Next Action" banner
+  const nextAction = (cadences as Cadence[] ?? [])
+    .filter((c) => !c.completed_at && !c.skipped)
+    .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime())[0] ?? null;
+
+  const nextActionDue = nextAction
+    ? (() => {
+        const days = Math.ceil((new Date(nextAction.scheduled_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+        if (days < 0) return { text: `${Math.abs(days)}d overdue`, color: "border-red-700 bg-red-900/20 text-red-300" };
+        if (days === 0) return { text: "Due today", color: "border-amber-700 bg-amber-900/20 text-amber-300" };
+        if (days === 1) return { text: "Due tomorrow", color: "border-blue-700 bg-blue-900/20 text-blue-300" };
+        return { text: `Due in ${days}d`, color: "border-slate-600 bg-slate-800 text-slate-300" };
+      })()
+    : null;
+
   return (
     <div className="mx-auto max-w-7xl">
       <LeadHeader
@@ -62,6 +78,21 @@ export default async function LeadDetailPage({ params }: Props) {
         currentUserId={user?.id ?? ""}
         teamMembers={teamMembers ?? []}
       />
+
+      {/* Next Action Banner */}
+      {nextAction && nextActionDue && (
+        <div className={`mt-3 rounded-lg border px-4 py-3 ${nextActionDue.color}`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wider opacity-70">Next Action</span>
+              <span className="text-sm font-medium">
+                {ACTIVITY_TYPE_LABELS[nextAction.channel as ActivityType] ?? nextAction.channel}
+              </span>
+            </div>
+            <span className="text-xs font-medium">{nextActionDue.text}</span>
+          </div>
+        </div>
+      )}
 
       <LeadDetailTabs
         overview={

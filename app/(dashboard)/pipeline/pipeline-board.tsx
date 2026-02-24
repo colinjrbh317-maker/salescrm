@@ -387,7 +387,9 @@ export function PipelineBoard({ leads, currentUserId }: PipelineBoardProps) {
                             </span>
                           )}
                           {daysInStage != null && (
-                            <span className="text-[10px] text-slate-500">
+                            <span className={`text-[10px] ${
+                              daysInStage <= 3 ? "text-emerald-500" : daysInStage <= 7 ? "text-amber-500" : "text-red-400"
+                            }`}>
                               {daysInStage}d in stage
                             </span>
                           )}

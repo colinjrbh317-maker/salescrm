@@ -1,7 +1,20 @@
 import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 
 export default async function LeaderboardPage() {
   const supabase = await createClient();
+
+  // Admin gate
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: currentProfile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+
+  if (currentProfile?.role !== "admin") redirect("/");
 
   // Get all profiles
   const { data: profiles } = await supabase
@@ -108,10 +121,14 @@ export default async function LeaderboardPage() {
               </tr>
             </thead>
             <tbody>
-              {leaderboard.map((user, index) => (
+              {leaderboard.map((lbUser, index) => {
+                const isCurrentUser = lbUser.id === user?.id;
+                return (
                 <tr
-                  key={user.id}
-                  className="border-b border-slate-700/50 transition-colors hover:bg-slate-800/50"
+                  key={lbUser.id}
+                  className={`border-b border-slate-700/50 transition-colors hover:bg-slate-800/50 ${
+                    isCurrentUser ? "bg-blue-900/20 border-l-2 border-l-blue-500" : ""
+                  }`}
                 >
                   <td className="px-4 py-3">
                     <span
@@ -129,25 +146,27 @@ export default async function LeaderboardPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 font-medium text-white">
-                    {user.name}
+                    {lbUser.name}
+                    {isCurrentUser && <span className="ml-2 text-xs text-blue-400">(you)</span>}
                   </td>
                   <td className="px-4 py-3 capitalize text-slate-400">
-                    {user.role}
+                    {lbUser.role}
                   </td>
                   <td className="px-4 py-3 text-right font-mono text-blue-400">
-                    {user.activities}
+                    {lbUser.activities}
                   </td>
                   <td className="px-4 py-3 text-right text-slate-300">
-                    {user.totalLeads}
+                    {lbUser.totalLeads}
                   </td>
                   <td className="px-4 py-3 text-right text-emerald-400">
-                    {user.closedWon}
+                    {lbUser.closedWon}
                   </td>
                   <td className="px-4 py-3 text-right font-mono text-emerald-400">
-                    ${user.revenue.toLocaleString()}
+                    ${lbUser.revenue.toLocaleString()}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

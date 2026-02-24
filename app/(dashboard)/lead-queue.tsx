@@ -31,6 +31,17 @@ function formatDate(date: string | null): string {
   });
 }
 
+function relativeTime(date: string | null): { text: string; color: string } {
+  if (!date) return { text: "Never", color: "text-slate-500" };
+  const days = Math.floor((Date.now() - new Date(date).getTime()) / (1000 * 60 * 60 * 24));
+  if (days === 0) return { text: "Today", color: "text-emerald-400" };
+  if (days === 1) return { text: "Yesterday", color: "text-emerald-400" };
+  if (days <= 3) return { text: `${days}d ago`, color: "text-blue-400" };
+  if (days <= 7) return { text: `${days}d ago`, color: "text-amber-400" };
+  if (days <= 14) return { text: `${days}d ago`, color: "text-orange-400" };
+  return { text: `${days}d ago`, color: "text-red-400" };
+}
+
 function Badge({
   label,
   colorClass,
@@ -84,6 +95,12 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
   const [filterStage, setFilterStage] = useState<PipelineStage | "">("");
   const [filterChannel, setFilterChannel] = useState("");
   const [showFilters, setShowFilters] = useState(false);
+  const [savedViews, setSavedViews] = useState<Record<string, { type: string; category: string; city: string; priority: string; stage: string; channel: string }>>(() => {
+    if (typeof window === "undefined") return {};
+    try { return JSON.parse(localStorage.getItem("crm_saved_views") ?? "{}"); } catch { return {}; }
+  });
+  const [showSaveView, setShowSaveView] = useState(false);
+  const [viewName, setViewName] = useState("");
   const router = useRouter();
   const supabase = createClient();
 
@@ -127,14 +144,16 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
       filtered = filtered.filter((l) => !l.assigned_to);
     }
 
-    // Search filter
+    // Search filter (name, city, category, phone, email)
     if (search.trim()) {
       const q = search.toLowerCase();
       filtered = filtered.filter(
         (l) =>
           l.name?.toLowerCase().includes(q) ||
           l.city?.toLowerCase().includes(q) ||
-          l.category?.toLowerCase().includes(q)
+          l.category?.toLowerCase().includes(q) ||
+          l.phone?.toLowerCase().includes(q) ||
+          l.email?.toLowerCase().includes(q)
       );
     }
 
@@ -401,11 +420,21 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
               <div className="absolute right-0 top-full z-40 mt-1 w-72 rounded-lg border border-slate-600 bg-slate-800 p-3 shadow-xl">
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-xs font-medium text-slate-400">Filters</span>
-                  {activeFilterCount > 0 && (
-                    <button onClick={clearAllFilters} className="text-xs text-slate-500 hover:text-white">
-                      Clear all
-                    </button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {activeFilterCount > 0 && (
+                      <button
+                        onClick={() => setShowSaveView(true)}
+                        className="text-xs text-emerald-400 hover:text-emerald-300"
+                      >
+                        Save view
+                      </button>
+                    )}
+                    {activeFilterCount > 0 && (
+                      <button onClick={clearAllFilters} className="text-xs text-slate-500 hover:text-white">
+                        Clear all
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <select value={filterType} onChange={(e) => setFilterType(e.target.value as LeadType | "")} className="w-full rounded border border-slate-600 bg-slate-700 px-2 py-1.5 text-xs text-slate-300 focus:border-emerald-500 focus:outline-none">
@@ -441,7 +470,84 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
           )}
         </div>
 
+        {/* Saved filter views */}
+        {Object.keys(savedViews).length > 0 && (
+          <div className="flex items-center gap-1">
+            {Object.entries(savedViews).map(([name, filters]) => (
+              <div key={name} className="flex items-center">
+                <button
+                  onClick={() => {
+                    setFilterType((filters.type || "") as LeadType | "");
+                    setFilterCategory(filters.category || "");
+                    setFilterCity(filters.city || "");
+                    setFilterPriority(filters.priority || "");
+                    setFilterStage((filters.stage || "") as PipelineStage | "");
+                    setFilterChannel(filters.channel || "");
+                  }}
+                  className="rounded-l-md border border-slate-600 bg-slate-800 px-2 py-1 text-[10px] font-medium text-slate-400 transition hover:bg-slate-700 hover:text-white"
+                >
+                  {name}
+                </button>
+                <button
+                  onClick={() => {
+                    const next = { ...savedViews };
+                    delete next[name];
+                    setSavedViews(next);
+                    localStorage.setItem("crm_saved_views", JSON.stringify(next));
+                  }}
+                  className="rounded-r-md border border-l-0 border-slate-600 bg-slate-800 px-1 py-1 text-[10px] text-slate-500 transition hover:bg-red-900/30 hover:text-red-400"
+                >
+                  x
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="flex-1" />
+
+        {/* Save View Modal */}
+        {showSaveView && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+            <div className="w-full max-w-xs rounded-lg border border-slate-600 bg-slate-800 p-4">
+              <h3 className="text-sm font-semibold text-white">Save Filter View</h3>
+              <input
+                type="text"
+                value={viewName}
+                onChange={(e) => setViewName(e.target.value)}
+                placeholder="View name..."
+                className="mt-2 w-full rounded-md border border-slate-600 bg-slate-700 px-3 py-2 text-sm text-white placeholder-slate-400 focus:border-emerald-500 focus:outline-none"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && viewName.trim()) {
+                    const next = { ...savedViews, [viewName.trim()]: { type: filterType, category: filterCategory, city: filterCity, priority: filterPriority, stage: filterStage, channel: filterChannel } };
+                    setSavedViews(next);
+                    localStorage.setItem("crm_saved_views", JSON.stringify(next));
+                    setViewName("");
+                    setShowSaveView(false);
+                  }
+                }}
+              />
+              <div className="mt-3 flex justify-end gap-2">
+                <button onClick={() => { setShowSaveView(false); setViewName(""); }} className="rounded px-3 py-1.5 text-xs text-slate-400 hover:text-white">Cancel</button>
+                <button
+                  onClick={() => {
+                    if (!viewName.trim()) return;
+                    const next = { ...savedViews, [viewName.trim()]: { type: filterType, category: filterCategory, city: filterCity, priority: filterPriority, stage: filterStage, channel: filterChannel } };
+                    setSavedViews(next);
+                    localStorage.setItem("crm_saved_views", JSON.stringify(next));
+                    setViewName("");
+                    setShowSaveView(false);
+                  }}
+                  disabled={!viewName.trim()}
+                  className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {(userRole === "admin") && teamMembers.length > 0 && leads.some((l) => !l.assigned_to) && (
           <button
@@ -568,7 +674,8 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
               <th className="px-3 py-2.5 text-xs font-medium text-slate-400">Priority</th>
               <th className="px-3 py-2.5 text-xs font-medium text-slate-400">Stage</th>
               <th className="px-3 py-2.5 text-xs font-medium text-slate-400">Score</th>
-              <th className="px-3 py-2.5 text-xs font-medium text-slate-400">Last Activity</th>
+              <th className="px-3 py-2.5 text-xs font-medium text-slate-400">Last Contact</th>
+              <th className="px-3 py-2.5 text-xs font-medium text-slate-400">Actions</th>
               {activeTab === "unassigned" && (
                 <th className="px-3 py-2.5 text-xs font-medium text-slate-400">
                   Action
@@ -580,7 +687,7 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
             {filteredLeads.length === 0 ? (
               <tr>
                 <td
-                  colSpan={activeTab === "unassigned" ? 7 : 6}
+                  colSpan={activeTab === "unassigned" ? 8 : 7}
                   className="px-4 py-12 text-center text-slate-500"
                 >
                   {search
@@ -651,10 +758,39 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
                     )}
                   </td>
                   <td className="px-3 py-2.5">
-                    <div className="text-xs text-slate-400">{formatDate(lead.last_contacted_at)}</div>
+                    {(() => {
+                      const rel = relativeTime(lead.last_contacted_at);
+                      return <div className={`text-xs font-medium ${rel.color}`}>{rel.text}</div>;
+                    })()}
                     {lead.next_followup_at && (
                       <div className="text-[10px] text-slate-500">Next: {formatDate(lead.next_followup_at)}</div>
                     )}
+                  </td>
+                  <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center gap-1">
+                      {lead.phone && (
+                        <a
+                          href={`tel:${lead.phone}`}
+                          className="rounded p-1 text-slate-500 transition hover:bg-slate-700 hover:text-blue-400"
+                          title={`Call ${lead.phone}`}
+                        >
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 0 0 2.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 0 1-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 0 0-1.091-.852H4.5A2.25 2.25 0 0 0 2.25 4.5v2.25Z" />
+                          </svg>
+                        </a>
+                      )}
+                      {lead.email && (
+                        <a
+                          href={`mailto:${lead.email}`}
+                          className="rounded p-1 text-slate-500 transition hover:bg-slate-700 hover:text-blue-400"
+                          title={`Email ${lead.email}`}
+                        >
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" />
+                          </svg>
+                        </a>
+                      )}
+                    </div>
                   </td>
                   {activeTab === "unassigned" && (
                     <td className="px-3 py-2.5">

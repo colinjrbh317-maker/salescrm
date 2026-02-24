@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 import {
   PIPELINE_STAGES,
   PIPELINE_STAGE_LABELS,
@@ -20,6 +21,18 @@ function daysBetween(a: string, b: string): number {
 export default async function AnalyticsPage() {
   const supabase = await createClient();
 
+  // Admin gate
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: currentProfile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+
+  if (currentProfile?.role !== "admin") redirect("/");
+
   // ----------------------------------------------------------
   // 1. Fetch all leads for pipeline data
   // ----------------------------------------------------------
@@ -27,7 +40,7 @@ export default async function AnalyticsPage() {
   const { data: leads } = await supabase
     .from("leads")
     .select(
-      "id, pipeline_stage, composite_score, close_amount, created_at, updated_at, assigned_to"
+      "id, name, pipeline_stage, composite_score, close_amount, created_at, updated_at, assigned_to"
     );
 
   // Fetch profiles for assignment distribution
@@ -70,7 +83,7 @@ export default async function AnalyticsPage() {
 
   const { data: recentActivities } = await supabase
     .from("activities")
-    .select("id, activity_type, channel, occurred_at")
+    .select("id, user_id, activity_type, channel, occurred_at")
     .gte("occurred_at", twoWeeksAgo)
     .order("occurred_at", { ascending: false });
 
@@ -227,7 +240,25 @@ export default async function AnalyticsPage() {
   ).length;
 
   // ----------------------------------------------------------
-  // 7. Assignment distribution
+  // 7. Team Activity Feed (admin-only — shows all activities)
+  // ----------------------------------------------------------
+
+  const { data: teamActivities } = await supabase
+    .from("activities")
+    .select("id, user_id, lead_id, activity_type, channel, outcome, notes, occurred_at, is_private")
+    .order("occurred_at", { ascending: false })
+    .limit(100);
+
+  // Build lookup maps
+  const leadNameMap: Record<string, string> = {};
+  if (leads) {
+    for (const lead of leads) {
+      leadNameMap[lead.id] = lead.name;
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 8. Assignment distribution
   // ----------------------------------------------------------
 
   const profileMap: Record<string, string> = {};
@@ -307,6 +338,53 @@ export default async function AnalyticsPage() {
           Pipeline and activity metrics
         </p>
       </div>
+
+      {/* ====================================================== */}
+      {/* Your Performance (personal metrics) */}
+      {/* ====================================================== */}
+
+      {(() => {
+        const myActivitiesThisWeek = thisWeekActivities.filter(
+          (a) => (a as { user_id?: string }).user_id === user.id
+        ).length;
+        const myActivitiesLastWeek = lastWeekActivities.filter(
+          (a) => (a as { user_id?: string }).user_id === user.id
+        ).length;
+        const myLeads = leads?.filter((l) => l.assigned_to === user.id) ?? [];
+        const myClosedWon = myLeads.filter((l) => l.pipeline_stage === "closed_won").length;
+        const myRevenue = myLeads.reduce((sum, l) => sum + (l.close_amount ?? 0), 0);
+
+        return (
+          <div className="mb-8 rounded-lg border border-blue-700/30 bg-blue-900/10 p-5">
+            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-blue-400">
+              Your Performance (7d)
+            </h2>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <div>
+                <p className="text-xs text-slate-400">Activities</p>
+                <div className="mt-1 flex items-baseline gap-2">
+                  <span className="text-2xl font-bold text-white">{myActivitiesThisWeek}</span>
+                  <span className={`text-xs font-medium ${myActivitiesThisWeek > myActivitiesLastWeek ? "text-emerald-400" : myActivitiesThisWeek < myActivitiesLastWeek ? "text-red-400" : "text-slate-400"}`}>
+                    {deltaIndicator(myActivitiesThisWeek, myActivitiesLastWeek)}
+                  </span>
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-slate-400">My Leads</p>
+                <p className="mt-1 text-2xl font-bold text-white">{myLeads.length}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-400">Closed Won</p>
+                <p className="mt-1 text-2xl font-bold text-emerald-400">{myClosedWon}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-400">My Revenue</p>
+                <p className="mt-1 text-2xl font-bold text-emerald-400">${myRevenue.toLocaleString()}</p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ====================================================== */}
       {/* KPI Cards */}
@@ -668,7 +746,7 @@ export default async function AnalyticsPage() {
       {/* Original Pipeline Breakdown (preserved) */}
       {/* ====================================================== */}
 
-      <div className="rounded-lg border border-slate-700 bg-slate-800 p-5">
+      <div className="mb-8 rounded-lg border border-slate-700 bg-slate-800 p-5">
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-400">
           Pipeline Breakdown
         </h2>
@@ -697,6 +775,86 @@ export default async function AnalyticsPage() {
               );
             })}
         </div>
+      </div>
+
+      {/* ====================================================== */}
+      {/* Team Activity Feed (admin-only) */}
+      {/* ====================================================== */}
+
+      <div className="rounded-lg border border-slate-700 bg-slate-800 p-5">
+        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-400">
+          Team Activity Feed (Last 100)
+        </h2>
+        {!teamActivities || teamActivities.length === 0 ? (
+          <p className="py-4 text-center text-sm text-slate-500">
+            No team activities found
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-700">
+                  <th className="px-3 py-2 font-medium text-slate-400">When</th>
+                  <th className="px-3 py-2 font-medium text-slate-400">Who</th>
+                  <th className="px-3 py-2 font-medium text-slate-400">Type</th>
+                  <th className="px-3 py-2 font-medium text-slate-400">Lead</th>
+                  <th className="px-3 py-2 font-medium text-slate-400">Outcome</th>
+                  <th className="px-3 py-2 font-medium text-slate-400">Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {teamActivities.map((activity) => {
+                  const userName = profileMap[activity.user_id] ?? "Unknown";
+                  const leadName = leadNameMap[activity.lead_id] ?? "—";
+                  const typeLabel =
+                    ACTIVITY_TYPE_LABELS[activity.activity_type as ActivityType] ??
+                    activity.activity_type;
+                  const when = new Date(activity.occurred_at);
+                  const timeStr = when.toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                  }) + " " + when.toLocaleTimeString("en-US", {
+                    hour: "numeric",
+                    minute: "2-digit",
+                  });
+
+                  return (
+                    <tr
+                      key={activity.id}
+                      className="border-b border-slate-700/30 transition-colors hover:bg-slate-700/20"
+                    >
+                      <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-400">
+                        {timeStr}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-200">
+                        {userName}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-slate-300">
+                        {typeLabel}
+                        {activity.is_private && (
+                          <span className="ml-1.5 rounded bg-slate-600 px-1 py-0.5 text-[10px] text-slate-400">
+                            private
+                          </span>
+                        )}
+                      </td>
+                      <td className="max-w-[200px] truncate px-3 py-2 text-slate-300">
+                        {leadName}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-slate-400">
+                        {activity.outcome
+                          ? activity.outcome.replace(/_/g, " ")
+                          : "—"}
+                      </td>
+                      <td className="max-w-[300px] truncate px-3 py-2 text-xs text-slate-500">
+                        {activity.notes ?? ""}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
