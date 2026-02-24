@@ -241,6 +241,45 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
     router.refresh();
   }
 
+  async function handleEnrichAll() {
+    const unenriched = leads.filter((l) => !l.enriched_at);
+    if (unenriched.length === 0) return;
+
+    setEnriching(true);
+    setEnrichError(null);
+    setEnrichProgress({ current: 0, total: unenriched.length, currentName: unenriched[0].name });
+
+    for (let i = 0; i < unenriched.length; i++) {
+      const lead = unenriched[i];
+      setEnrichProgress({ current: i, total: unenriched.length, currentName: lead.name });
+
+      try {
+        const response = await fetch("/api/enrich", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ leadIds: [lead.id] }),
+        });
+
+        if (!response.ok) {
+          const err = await response.json();
+          if (err.error?.includes("ANTHROPIC_API_KEY")) {
+            setEnrichError("Anthropic API key not configured.");
+            setEnriching(false);
+            setEnrichProgress(null);
+            return;
+          }
+          console.error(`[Enrich All] Failed for ${lead.name}:`, err.error);
+        }
+      } catch (error) {
+        console.error(`[Enrich All] Network error for ${lead.name}:`, error);
+      }
+    }
+
+    setEnrichProgress(null);
+    setEnriching(false);
+    router.refresh();
+  }
+
   async function handleBulkDelete() {
     setDeleting(true);
     try {
@@ -556,6 +595,17 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
             className="whitespace-nowrap rounded-md bg-purple-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-purple-700 disabled:opacity-50"
           >
             {autoAssigning ? "..." : `Auto-Assign`}
+          </button>
+        )}
+
+        {leads.some((l) => !l.enriched_at) && (
+          <button
+            onClick={handleEnrichAll}
+            disabled={enriching}
+            className="whitespace-nowrap rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+            title="Enrich all leads that haven't been enriched yet"
+          >
+            {enriching ? "..." : `Enrich All (${leads.filter((l) => !l.enriched_at).length})`}
           </button>
         )}
 
