@@ -78,7 +78,7 @@ interface SessionLeadCardProps {
   userId: string;
   sessionId: string;
   scriptContent: string | null;
-  onOutcome: (outcome: Outcome, note: string | null) => void;
+  onOutcome: (outcome: Outcome, note: string | null) => Promise<boolean>;
   onSkip: () => void;
 }
 
@@ -108,6 +108,15 @@ export default function SessionLeadCard({
     setTimeout(() => setCopied(false), 2000);
   }, [lead.phone]);
 
+  const handleLog = useCallback(async () => {
+    if (!selectedOutcome) return;
+    setSubmitting(true);
+    const success = await onOutcome(selectedOutcome, note.trim() || null);
+    if (!success) {
+      setSubmitting(false);
+    }
+  }, [note, onOutcome, selectedOutcome]);
+
   // Keyboard shortcuts: 1-4 = outcomes, S = skip, Enter = log
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -115,16 +124,25 @@ export default function SessionLeadCard({
       const tag = (e.target as HTMLElement).tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
-      if (e.key === "1") { setSelectedOutcome("connected"); }
-      else if (e.key === "2") { setSelectedOutcome("voicemail"); }
-      else if (e.key === "3") { setSelectedOutcome("no_answer"); }
-      else if (e.key === "4") { setSelectedOutcome("not_interested"); }
-      else if (e.key === "s" || e.key === "S") { e.preventDefault(); onSkip(); }
-      else if (e.key === "Enter" && selectedOutcome && !submitting) { e.preventDefault(); handleLog(); }
+      if (e.key === "1") {
+        setSelectedOutcome("connected");
+      } else if (e.key === "2") {
+        setSelectedOutcome("voicemail");
+      } else if (e.key === "3") {
+        setSelectedOutcome("no_answer");
+      } else if (e.key === "4") {
+        setSelectedOutcome("not_interested");
+      } else if (e.key === "s" || e.key === "S") {
+        e.preventDefault();
+        onSkip();
+      } else if (e.key === "Enter" && selectedOutcome && !submitting) {
+        e.preventDefault();
+        void handleLog();
+      }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedOutcome, submitting, onSkip]);
+  }, [handleLog, onSkip, selectedOutcome, submitting]);
 
   const TIMING_COLORS = {
     emerald: "border-emerald-700/50 bg-emerald-900/20 text-emerald-400",
@@ -133,12 +151,6 @@ export default function SessionLeadCard({
     slate: "border-slate-600/50 bg-slate-700/20 text-slate-400",
   } as const;
 
-  async function handleLog() {
-    if (!selectedOutcome) return;
-    setSubmitting(true);
-    onOutcome(selectedOutcome, note.trim() || null);
-  }
-
   return (
     <div className="space-y-3">
       {/* ============ LEAD HEADER CARD ============ */}
@@ -146,7 +158,44 @@ export default function SessionLeadCard({
         {/* Business name + badges row */}
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <h2 className="text-lg font-semibold text-white">{lead.name}</h2>
+            <div className="flex items-center gap-3">
+              {/* Favicon + website link */}
+              {lead.website && (
+                <a
+                  href={
+                    lead.website.startsWith("http")
+                      ? lead.website
+                      : `https://${lead.website}`
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0"
+                  title={lead.website}
+                >
+                  <img
+                    src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(lead.website.replace(/^https?:\/\//, ""))}&sz=32`}
+                    alt=""
+                    className="h-5 w-5 rounded"
+                    loading="lazy"
+                  />
+                </a>
+              )}
+              <h2 className="text-lg font-semibold text-white">{lead.name}</h2>
+              {/* Composite score badge — right of name */}
+              {lead.composite_score != null && (
+                <span
+                  className={`shrink-0 rounded px-2 py-0.5 text-xs font-bold ${
+                    lead.composite_score >= 70
+                      ? "bg-emerald-900/50 text-emerald-400"
+                      : lead.composite_score >= 40
+                      ? "bg-amber-900/50 text-amber-400"
+                      : "bg-red-900/50 text-red-400"
+                  }`}
+                >
+                  {lead.composite_score}
+                </span>
+              )}
+            </div>
 
             <div className="mt-1.5 flex flex-wrap items-center gap-2">
               {lead.priority && (
@@ -166,20 +215,6 @@ export default function SessionLeadCard({
               >
                 {PIPELINE_STAGE_LABELS[lead.pipeline_stage]}
               </span>
-              {/* Composite score badge */}
-              {lead.composite_score != null && (
-                <span
-                  className={`rounded px-2 py-0.5 text-xs font-bold ${
-                    lead.composite_score >= 70
-                      ? "bg-emerald-900/50 text-emerald-400"
-                      : lead.composite_score >= 40
-                      ? "bg-amber-900/50 text-amber-400"
-                      : "bg-red-900/50 text-red-400"
-                  }`}
-                >
-                  {lead.composite_score}
-                </span>
-              )}
               {/* Call timing badge */}
               <span
                 className={`rounded border px-2 py-0.5 text-xs font-medium ${
@@ -517,7 +552,7 @@ export default function SessionLeadCard({
             Skip
           </button>
           <button
-            onClick={handleLog}
+            onClick={() => void handleLog()}
             disabled={!selectedOutcome || submitting}
             className="flex-1 rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:opacity-50"
           >

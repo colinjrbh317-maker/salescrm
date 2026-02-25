@@ -694,7 +694,7 @@ export default async function AnalyticsPage() {
 
       <div className="mb-8 rounded-lg border border-slate-700 bg-slate-800 p-5">
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-400">
-          Lead Assignment Distribution
+          Lead Claiming Distribution
         </h2>
         {Object.keys(assignmentCounts).length === 0 && unassignedCount === 0 ? (
           <p className="py-4 text-center text-sm text-slate-500">
@@ -724,7 +724,7 @@ export default async function AnalyticsPage() {
             {unassignedCount > 0 && (
               <div>
                 <div className="mb-1 flex items-center justify-between text-sm">
-                  <span className="text-slate-400 italic">Unassigned</span>
+                  <span className="text-slate-400 italic">Unclaimed</span>
                   <span className="text-slate-400">{unassignedCount}</span>
                 </div>
                 <div className="h-2 w-full rounded-full bg-slate-700">

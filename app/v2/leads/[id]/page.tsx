@@ -11,6 +11,7 @@ import { ActivityTimeline } from "./activity-timeline";
 import { ActivityLogger } from "./activity-logger";
 import { CadenceManager } from "./cadence-manager";
 import { LeadHeader } from "./lead-header";
+import { MessagePanel } from "./message-panel";
 import { BestTimeToCall } from "../../../(dashboard)/leads/[id]/best-time-to-call";
 
 interface Props {
@@ -86,6 +87,14 @@ export default async function V2LeadDetailPage({ params }: Props) {
                                 <ActivityLogger
                                     leadId={id}
                                     currentUserId={user.id}
+                                />
+                            </div>
+
+                            <div className="rounded-2xl border border-border/40 bg-card p-6 shadow-md shadow-black/20 backdrop-blur-sm">
+                                <MessagePanel
+                                    leadId={id}
+                                    currentUserId={user.id}
+                                    leadName={(lead as Lead).name}
                                 />
                             </div>
 

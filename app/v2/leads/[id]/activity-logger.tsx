@@ -59,10 +59,30 @@ export function ActivityLogger({ leadId, currentUserId }: ActivityLoggerProps) {
         });
 
         if (!error) {
+            // Update last_contacted_at
             await supabase
                 .from("leads")
                 .update({ last_contacted_at: new Date().toISOString() })
                 .eq("id", leadId);
+
+            // Auto-advance cadence: find matching pending step and mark completed
+            const { data: pendingStep } = await supabase
+                .from("cadences")
+                .select("id")
+                .eq("lead_id", leadId)
+                .eq("channel", channel)
+                .is("completed_at", null)
+                .eq("skipped", false)
+                .order("step_number", { ascending: true })
+                .limit(1)
+                .single();
+
+            if (pendingStep) {
+                await supabase
+                    .from("cadences")
+                    .update({ completed_at: new Date().toISOString() })
+                    .eq("id", pendingStep.id);
+            }
 
             setSuccess(true);
             setNotes("");

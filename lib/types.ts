@@ -212,6 +212,8 @@ export interface Activity {
   is_private: boolean;
   duration_sec: number | null;
   occurred_at: string;
+  message_id: string | null;
+  cadence_id: string | null;
 }
 
 // ============================================================
@@ -280,6 +282,7 @@ export interface Session {
   id: string;
   user_id: string;
   session_type: SessionType;
+  batch_mode?: boolean;
   started_at: string;
   ended_at: string | null;
   leads_worked: number;
@@ -293,6 +296,52 @@ export interface Session {
 }
 
 export type SessionInsert = Omit<Session, "id" | "created_at">;
+
+// ============================================================
+// Table: messages
+// ============================================================
+
+export type MessageStatus = "draft" | "sent" | "replied";
+
+export type CtaType = "full_offer" | "mockup_tease" | "conversation" | "question";
+
+export interface Message {
+  id: string;
+  created_at: string;
+  lead_id: string;
+  cadence_id: string | null;
+  user_id: string;
+
+  // Content
+  channel: Channel;
+  subject: string | null;
+  body: string;
+
+  // Generation metadata
+  template_used: string | null;
+  cadence_step: number | null;
+  angle: string | null;
+  cta_type: CtaType | null;
+  research_highlights: Record<string, unknown> | null;
+
+  // Regeneration
+  direction: string | null;
+  version: number;
+  parent_message_id: string | null;
+
+  // Status and sending
+  status: MessageStatus;
+  activity_id: string | null;
+  send_note: string | null;
+
+  // Timestamps
+  generated_at: string;
+  sent_at: string | null;
+  metadata: Record<string, unknown> | null;
+}
+
+export type MessageInsert = Omit<Message, "id" | "created_at">;
+export type MessageUpdate = Partial<MessageInsert>;
 
 // ============================================================
 // Derived / helper types

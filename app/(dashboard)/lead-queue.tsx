@@ -15,6 +15,8 @@ import {
 } from "@/lib/types";
 
 type Tab = "my" | "unassigned" | "all";
+const ENRICH_CONCURRENCY = 3;
+const BULK_DB_CONCURRENCY = 20;
 
 interface LeadQueueProps {
   leads: Lead[];
@@ -74,7 +76,6 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
   const [claimingId, setClaimingId] = useState<string | null>(null);
   const [autoAssigning, setAutoAssigning] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [bulkAction, setBulkAction] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
@@ -200,38 +201,65 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
     [leads, selectedIds]
   );
 
-  // Bulk actions (enrich + re-enrich)
-  async function handleBulkEnrich() {
-    const toEnrich = [...selectedLeads];
-    if (toEnrich.length === 0) return;
+  async function runWithConcurrency<T>(
+    items: T[],
+    worker: (item: T) => Promise<void>,
+    concurrency: number
+  ) {
+    for (let i = 0; i < items.length; i += concurrency) {
+      const batch = items.slice(i, i + concurrency);
+      await Promise.all(batch.map((item) => worker(item)));
+    }
+  }
+
+  async function enrichLeads(targetLeads: Lead[], missingKeyMessage: string) {
+    if (targetLeads.length === 0) return;
 
     setEnriching(true);
     setEnrichError(null);
-    setEnrichProgress({ current: 0, total: toEnrich.length, currentName: toEnrich[0].name });
+    setEnrichProgress({ current: 0, total: targetLeads.length, currentName: targetLeads[0].name });
 
-    for (let i = 0; i < toEnrich.length; i++) {
-      const lead = toEnrich[i];
-      setEnrichProgress({ current: i, total: toEnrich.length, currentName: lead.name });
+    let completed = 0;
+    for (let i = 0; i < targetLeads.length; i += ENRICH_CONCURRENCY) {
+      const batch = targetLeads.slice(i, i + ENRICH_CONCURRENCY);
+      const results = await Promise.all(
+        batch.map(async (lead) => {
+          try {
+            const response = await fetch("/api/enrich", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ leadIds: [lead.id] }),
+            });
 
-      try {
-        const response = await fetch("/api/enrich", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ leadIds: [lead.id] }),
-        });
-
-        if (!response.ok) {
-          const err = await response.json();
-          if (err.error?.includes("ANTHROPIC_API_KEY")) {
-            setEnrichError("Anthropic API key not configured. Add ANTHROPIC_API_KEY to .env.local and restart the server.");
-            setEnriching(false);
-            setEnrichProgress(null);
-            return;
+            if (!response.ok) {
+              const err = await response.json().catch(() => ({}));
+              const msg = typeof err.error === "string" ? err.error : "Unknown enrichment error";
+              if (msg.includes("ANTHROPIC_API_KEY")) {
+                return { leadName: lead.name, fatal: true };
+              }
+              console.error(`[Enrich] Failed for ${lead.name}:`, msg);
+            }
+          } catch (error) {
+            console.error(`[Enrich] Network error for ${lead.name}:`, error);
           }
-          console.error(`[Enrich] Failed for ${lead.name}:`, err.error);
+
+          return { leadName: lead.name, fatal: false };
+        })
+      );
+
+      for (const result of results) {
+        if (result.fatal) {
+          setEnrichError(missingKeyMessage);
+          setEnriching(false);
+          setEnrichProgress(null);
+          return;
         }
-      } catch (error) {
-        console.error(`[Enrich] Network error for ${lead.name}:`, error);
+        completed += 1;
+        setEnrichProgress({
+          current: completed,
+          total: targetLeads.length,
+          currentName: result.leadName,
+        });
       }
     }
 
@@ -241,43 +269,18 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
     router.refresh();
   }
 
+  // Bulk actions (enrich + re-enrich)
+  async function handleBulkEnrich() {
+    const toEnrich = [...selectedLeads];
+    await enrichLeads(
+      toEnrich,
+      "Anthropic API key not configured. Add ANTHROPIC_API_KEY to .env.local and restart the server."
+    );
+  }
+
   async function handleEnrichAll() {
     const unenriched = filteredLeads.filter((l) => !l.enriched_at);
-    if (unenriched.length === 0) return;
-
-    setEnriching(true);
-    setEnrichError(null);
-    setEnrichProgress({ current: 0, total: unenriched.length, currentName: unenriched[0].name });
-
-    for (let i = 0; i < unenriched.length; i++) {
-      const lead = unenriched[i];
-      setEnrichProgress({ current: i, total: unenriched.length, currentName: lead.name });
-
-      try {
-        const response = await fetch("/api/enrich", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ leadIds: [lead.id] }),
-        });
-
-        if (!response.ok) {
-          const err = await response.json();
-          if (err.error?.includes("ANTHROPIC_API_KEY")) {
-            setEnrichError("Anthropic API key not configured.");
-            setEnriching(false);
-            setEnrichProgress(null);
-            return;
-          }
-          console.error(`[Enrich All] Failed for ${lead.name}:`, err.error);
-        }
-      } catch (error) {
-        console.error(`[Enrich All] Network error for ${lead.name}:`, error);
-      }
-    }
-
-    setEnrichProgress(null);
-    setEnriching(false);
-    router.refresh();
+    await enrichLeads(unenriched, "Anthropic API key not configured.");
   }
 
   async function handleBulkDelete() {
@@ -313,13 +316,17 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
       user_name: currentMember?.full_name ?? "Unknown",
     };
 
-    for (const lead of selectedLeads) {
+    await runWithConcurrency(
+      selectedLeads,
+      async (lead) => {
       const existing: LeadNote[] = (lead.notes as LeadNote[] | null) ?? [];
       await supabase
         .from("leads")
         .update({ notes: [...existing, newNote] })
         .eq("id", lead.id);
-    }
+      },
+      BULK_DB_CONCURRENCY
+    );
 
     setNoteText("");
     setShowNoteModal(false);
@@ -328,12 +335,9 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
   }
 
   async function handleBulkAssign(assignToId: string | null) {
-    for (const id of selectedIds) {
-      await supabase
-        .from("leads")
-        .update({ assigned_to: assignToId })
-        .eq("id", id);
-    }
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    await supabase.from("leads").update({ assigned_to: assignToId }).in("id", ids);
     setShowAssignModal(false);
     setSelectedIds(new Set());
     router.refresh();
@@ -354,13 +358,19 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
     setAutoAssigning(true);
 
     const unassigned = leads.filter((l) => !l.assigned_to);
-    for (let i = 0; i < unassigned.length; i++) {
-      const assignTo = teamMembers[i % teamMembers.length].id;
-      await supabase
-        .from("leads")
-        .update({ assigned_to: assignTo })
-        .eq("id", unassigned[i].id);
-    }
+    await runWithConcurrency(
+      unassigned.map((lead, i) => ({
+        leadId: lead.id,
+        assignTo: teamMembers[i % teamMembers.length].id,
+      })),
+      async ({ leadId, assignTo }) => {
+        await supabase
+          .from("leads")
+          .update({ assigned_to: assignTo })
+          .eq("id", leadId);
+      },
+      BULK_DB_CONCURRENCY
+    );
 
     setAutoAssigning(false);
     router.refresh();
@@ -374,7 +384,7 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
     },
     {
       key: "unassigned",
-      label: "Unassigned",
+      label: "Unclaimed",
       count: leads.filter((l) => !l.assigned_to).length,
     },
     {
@@ -594,7 +604,7 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
             disabled={autoAssigning}
             className="whitespace-nowrap rounded-md bg-purple-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-purple-700 disabled:opacity-50"
           >
-            {autoAssigning ? "..." : `Auto-Assign`}
+            {autoAssigning ? "..." : `Auto-Claim`}
           </button>
         )}
 
@@ -626,11 +636,11 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
         <div className="mb-4 rounded-lg border border-emerald-700/50 bg-emerald-900/20 p-3">
           <div className="mb-2 flex items-center justify-between text-sm">
             <span className="text-emerald-300">
-              Enriching {enrichProgress.current + 1} of {enrichProgress.total}
+              Enriching {enrichProgress.current} of {enrichProgress.total}
               <span className="ml-2 text-emerald-400/70">— {enrichProgress.currentName}</span>
             </span>
             <span className="text-emerald-400/70 text-xs">
-              {Math.round(((enrichProgress.current) / enrichProgress.total) * 100)}%
+              {Math.round((enrichProgress.current / enrichProgress.total) * 100)}%
             </span>
           </div>
           <div className="h-2 w-full overflow-hidden rounded-full bg-emerald-900/50">
@@ -684,13 +694,13 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
             onClick={() => setShowAssignModal(true)}
             className="rounded-md bg-purple-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-purple-700"
           >
-            Assign
+            Claim
           </button>
           <button
             onClick={() => handleBulkAssign(null)}
             className="rounded-md border border-slate-500 bg-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-600 hover:text-white"
           >
-            Unassign
+            Unclaim
           </button>
           <button
             onClick={() => setShowDeleteConfirm(true)}
@@ -743,7 +753,7 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
                   {search
                     ? "No leads match your search"
                     : activeTab === "my"
-                    ? "No leads assigned to you yet. Check the Unassigned tab to claim leads."
+                    ? "No leads claimed by you yet. Check the Unclaimed tab to claim leads."
                     : "No leads found"}
                 </td>
               </tr>
@@ -771,8 +781,8 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
                         <div className="flex items-center gap-1.5">
                           <span className="text-sm font-medium text-white">{lead.name}</span>
                           {lead.enriched_at && (
-                            <svg className="h-3.5 w-3.5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20" aria-label="Enriched">
-                              <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                            <svg className="h-3.5 w-3.5 text-yellow-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" aria-label="Enriched">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
                             </svg>
                           )}
                         </div>
@@ -939,7 +949,7 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
           <div className="w-full max-w-sm rounded-lg border border-slate-600 bg-slate-800 p-6">
             <h3 className="text-lg font-semibold text-white">
-              Assign {selectedIds.size} Lead{selectedIds.size > 1 ? "s" : ""}
+              Claim {selectedIds.size} Lead{selectedIds.size > 1 ? "s" : ""}
             </h3>
             <div className="mt-3 space-y-2">
               <button
@@ -951,7 +961,7 @@ export function LeadQueue({ leads, currentUserId, teamMembers = [], userRole }: 
                     <path strokeLinecap="round" strokeLinejoin="round" d="M22 10.5h-6m-2.25-4.125a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0ZM4 19.235v-.11a6.375 6.375 0 0 1 12.75 0v.109A12.318 12.318 0 0 1 10.374 21c-2.331 0-4.512-.645-6.374-1.766Z" />
                   </svg>
                 </span>
-                <span>Unassign</span>
+                <span>Unclaim</span>
               </button>
               {teamMembers.map((member) => (
                 <button

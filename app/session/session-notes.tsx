@@ -19,7 +19,7 @@ export default function SessionNotes({ leadId, userId }: SessionNotesProps) {
   const [input, setInput] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const fetchNotes = useCallback(async () => {
+  const fetchNotes = useCallback(async (): Promise<NoteWithAuthor[]> => {
     const supabase = createClient();
     const { data } = await supabase
       .from("activities")
@@ -29,13 +29,18 @@ export default function SessionNotes({ leadId, userId }: SessionNotesProps) {
       .eq("is_private", false)
       .order("created_at", { ascending: false });
 
-    if (data) {
-      setNotes(data as NoteWithAuthor[]);
-    }
+    return (data as NoteWithAuthor[] | null) ?? [];
   }, [leadId]);
 
   useEffect(() => {
-    fetchNotes();
+    let isMounted = true;
+    void (async () => {
+      const nextNotes = await fetchNotes();
+      if (isMounted) setNotes(nextNotes);
+    })();
+    return () => {
+      isMounted = false;
+    };
   }, [fetchNotes]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -57,7 +62,8 @@ export default function SessionNotes({ leadId, userId }: SessionNotesProps) {
 
     if (result.success) {
       setInput("");
-      await fetchNotes();
+      const nextNotes = await fetchNotes();
+      setNotes(nextNotes);
     }
     setSaving(false);
   }

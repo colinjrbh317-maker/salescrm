@@ -88,7 +88,7 @@ export function LeadQueue({ leads, currentUserId }: LeadQueueProps) {
 
     const tabs: { key: Tab; label: string; count: number }[] = [
         { key: "my", label: "My Leads", count: leads.filter((l) => l.assigned_to === currentUserId).length },
-        { key: "unassigned", label: "Unassigned", count: leads.filter((l) => !l.assigned_to).length },
+        { key: "unassigned", label: "Unclaimed", count: leads.filter((l) => !l.assigned_to).length },
         { key: "all", label: "All Database", count: leads.length },
     ];
 

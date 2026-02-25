@@ -1779,68 +1779,7 @@ export async function POST(request: NextRequest) {
           });
       }
 
-      // ── Auto-generate cadence from available channels ──
-      try {
-        const { detectAvailableChannels, generateCadence } = await import("@/lib/cadence-generator");
-        const channels = detectAvailableChannels({
-          phone: result.phone || lead.phone,
-          email: lead.email,
-          owner_email: result.owner_email,
-          instagram: result.instagram || lead.instagram,
-          facebook: result.facebook || lead.facebook,
-          tiktok: result.tiktok || lead.tiktok,
-        });
-
-        const hasAnyChannel = Object.values(channels).some(Boolean);
-        const userId = (lead as Record<string, unknown>).assigned_to as string | null;
-
-        if (hasAnyChannel && userId) {
-          // Check for existing pending cadences
-          const { data: existingCadences } = await supabase
-            .from("cadences")
-            .select("id")
-            .eq("lead_id", lead.id)
-            .is("completed_at", null)
-            .eq("skipped", false)
-            .limit(1);
-
-          if (!existingCadences || existingCadences.length === 0) {
-            const steps = generateCadence({
-              leadId: lead.id,
-              userId,
-              category: lead.category,
-              availableChannels: channels,
-              recommendedChannel: (result.ai_briefing as Record<string, unknown> | null)?.recommended_channel as string | null | undefined,
-            });
-
-            if (steps.length > 0) {
-              const cadenceRows = steps.map((s) => ({
-                lead_id: lead.id,
-                user_id: userId,
-                step_number: s.step_number,
-                channel: s.channel,
-                scheduled_at: s.scheduled_at,
-                template_name: s.template_name,
-                skipped: false,
-              }));
-
-              await supabase.from("cadences").insert(cadenceRows);
-              console.log(`[Enrich] Auto-created ${steps.length}-step cadence for ${lead.name}`);
-
-              // Update enrichment log with cadence info
-              const updatedLog = [...(result.enrichment_log || []), { step: "Cadence", outcome: `Auto-created ${steps.length}-step cadence`, detail: null, timestamp: new Date().toISOString() }];
-              await supabase.from("leads").update({ enrichment_log: updatedLog }).eq("id", lead.id);
-            }
-          } else {
-            console.log(`[Enrich] Skipping cadence generation for ${lead.name} — existing cadence found`);
-            const updatedLog = [...(result.enrichment_log || []), { step: "Cadence", outcome: "Skipped — existing cadence found", detail: null, timestamp: new Date().toISOString() }];
-            await supabase.from("leads").update({ enrichment_log: updatedLog }).eq("id", lead.id);
-          }
-        }
-      } catch (cadenceError) {
-        // Non-blocking: log but don't fail enrichment
-        console.error(`[Enrich] Cadence generation failed for ${lead.name}:`, cadenceError);
-      }
+      // Cadence generation removed from enrichment — now triggered manually via "Generate Cadence" button on lead detail page
     }
 
     const enriched = results.filter((r) => !r.error && !r.permanently_closed).length;

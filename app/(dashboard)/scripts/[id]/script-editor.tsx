@@ -65,6 +65,17 @@ interface ScriptEditorProps {
   saving: boolean;
 }
 
+type MarkdownStorage = {
+  markdown?: {
+    getMarkdown: () => string;
+  };
+};
+
+function getMarkdownFromStorage(storage: unknown): string {
+  const maybeStorage = storage as MarkdownStorage;
+  return maybeStorage.markdown?.getMarkdown() ?? "";
+}
+
 // ============================================================
 // Toolbar Button
 // ============================================================
@@ -150,7 +161,7 @@ export function ScriptEditor({
       // Auto-save with 2 second debounce
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
       autoSaveTimer.current = setTimeout(() => {
-        const md = (ed.storage as Record<string, any>).markdown.getMarkdown();
+        const md = getMarkdownFromStorage(ed.storage);
         if (md !== lastSavedContent.current) {
           setAutoSaveStatus("saving");
           onSave(md).then(() => {
@@ -172,7 +183,7 @@ export function ScriptEditor({
 
   const handleManualSave = useCallback(async () => {
     if (!editor) return;
-    const md = (editor.storage as Record<string, any>).markdown.getMarkdown();
+    const md = getMarkdownFromStorage(editor.storage);
     lastSavedContent.current = md;
     await onSave(md);
   }, [editor, onSave]);

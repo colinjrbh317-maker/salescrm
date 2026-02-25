@@ -14,6 +14,14 @@ const TikTokIcon = ({ className }: { className?: string }) => (
     </svg>
 );
 
+function getEnrichmentStatus(enrichedAt: string | null): { label: string; style: string } {
+    if (!enrichedAt) return { label: "Not Enriched", style: "bg-muted text-muted-foreground border-border/40" };
+    const daysSince = Math.floor((Date.now() - new Date(enrichedAt).getTime()) / (1000 * 60 * 60 * 24));
+    if (daysSince <= 7) return { label: "Fresh", style: "bg-primary/10 text-primary border-primary/20" };
+    if (daysSince <= 30) return { label: "Aging", style: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20" };
+    return { label: "Stale", style: "bg-destructive/10 text-destructive border-destructive/20" };
+}
+
 function getStageBadgeStyles(stage: string): string {
     switch (stage) {
         case "cold": return "bg-cyan-500/10 text-cyan-400 border-cyan-500/20";
@@ -37,6 +45,14 @@ export function LeadHeader({ lead }: { lead: Lead }) {
                 <div className="space-y-4">
                     <div>
                         <div className="flex items-center gap-3 mb-2">
+                            {lead.website && (
+                                <img
+                                    src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(lead.website.replace(/^https?:\/\//, ""))}&sz=32`}
+                                    alt=""
+                                    className="h-6 w-6 rounded shrink-0"
+                                    loading="lazy"
+                                />
+                            )}
                             <h1 className="text-3xl font-bold tracking-tight text-foreground">{lead.name}</h1>
                         </div>
 
@@ -88,6 +104,14 @@ export function LeadHeader({ lead }: { lead: Lead }) {
                         <Badge variant="outline" className={`text-sm px-3 py-1 font-semibold ${getStageBadgeStyles(lead.pipeline_stage)}`}>
                             {PIPELINE_STAGE_LABELS[lead.pipeline_stage]}
                         </Badge>
+                        {(() => {
+                            const enrichment = getEnrichmentStatus(lead.enriched_at);
+                            return (
+                                <Badge variant="outline" className={`font-semibold ${enrichment.style}`}>
+                                    {enrichment.label}
+                                </Badge>
+                            );
+                        })()}
                     </div>
 
                     <div className="text-right">

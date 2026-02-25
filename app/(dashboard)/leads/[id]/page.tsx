@@ -11,6 +11,7 @@ import { BestTimeToCall } from "./best-time-to-call";
 import { LeadDetailTabs } from "./lead-detail-tabs";
 import { EnrichmentLog } from "./enrichment-log";
 import { ActivityLoggerFab } from "./activity-logger-fab";
+import LeadOutreach from "./lead-outreach";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -63,7 +64,10 @@ export default async function LeadDetailPage({ params }: Props) {
 
   const nextActionDue = nextAction
     ? (() => {
-        const days = Math.ceil((new Date(nextAction.scheduled_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+        const days = Math.ceil(
+          (new Date(nextAction.scheduled_at).getTime() - new Date().getTime()) /
+            (1000 * 60 * 60 * 24)
+        );
         if (days < 0) return { text: `${Math.abs(days)}d overdue`, color: "border-red-700 bg-red-900/20 text-red-300" };
         if (days === 0) return { text: "Due today", color: "border-amber-700 bg-amber-900/20 text-amber-300" };
         if (days === 1) return { text: "Due tomorrow", color: "border-blue-700 bg-blue-900/20 text-blue-300" };
@@ -159,6 +163,14 @@ export default async function LeadDetailPage({ params }: Props) {
         cadence={
           <CadenceManager
             leadId={id}
+            currentUserId={user?.id ?? ""}
+            cadences={(cadences ?? []) as Cadence[]}
+            lead={lead as Lead}
+          />
+        }
+        outreach={
+          <LeadOutreach
+            lead={lead as Lead}
             currentUserId={user?.id ?? ""}
             cadences={(cadences ?? []) as Cadence[]}
           />

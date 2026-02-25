@@ -16,6 +16,7 @@ interface LeadHeaderProps {
   lead: Lead;
   currentUserId?: string;
   teamMembers?: { id: string; full_name: string | null }[];
+  focusMode?: boolean;
 }
 
 function getInitials(name: string | null): string {
@@ -28,7 +29,12 @@ function getInitials(name: string | null): string {
     .slice(0, 2);
 }
 
-export function LeadHeader({ lead, currentUserId, teamMembers = [] }: LeadHeaderProps) {
+export function LeadHeader({
+  lead,
+  currentUserId,
+  teamMembers = [],
+  focusMode = false,
+}: LeadHeaderProps) {
   const [editing, setEditing] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -75,19 +81,21 @@ export function LeadHeader({ lead, currentUserId, teamMembers = [] }: LeadHeader
   return (
     <div>
       {/* Back + Breadcrumb */}
-      <nav className="mb-4 flex items-center gap-2 text-sm text-slate-400">
-        <button
-          onClick={() => router.back()}
-          className="flex items-center gap-1 text-slate-400 transition-colors hover:text-slate-200"
-        >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
-          </svg>
-          Back
-        </button>
-        <span>/</span>
-        <span className="text-slate-200">{lead.name}</span>
-      </nav>
+      {!focusMode && (
+        <nav className="mb-4 flex items-center gap-2 text-sm text-slate-400">
+          <button
+            onClick={() => router.back()}
+            className="flex items-center gap-1 text-slate-400 transition-colors hover:text-slate-200"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+            </svg>
+            Back
+          </button>
+          <span>/</span>
+          <span className="text-slate-200">{lead.name}</span>
+        </nav>
+      )}
 
       {/* Delete error banner */}
       {deleteError && (
@@ -104,15 +112,33 @@ export function LeadHeader({ lead, currentUserId, teamMembers = [] }: LeadHeader
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
+              {lead.website && (
+                <a
+                  href={lead.website.startsWith("http") ? lead.website : `https://${lead.website}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0"
+                  title={lead.website}
+                >
+                  <img
+                    src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(lead.website.replace(/^https?:\/\//, ""))}&sz=32`}
+                    alt=""
+                    className="h-5 w-5 rounded"
+                    loading="lazy"
+                  />
+                </a>
+              )}
               <h1 className="text-lg font-semibold text-white">{lead.name}</h1>
               {lead.enriched_at && (
                 <svg
                   className="h-5 w-5 text-yellow-400"
-                  fill="currentColor"
-                  viewBox="0 0 20 20"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth={2}
+                  stroke="currentColor"
                   aria-label="Enriched"
                 >
-                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
                 </svg>
               )}
             </div>
@@ -130,25 +156,29 @@ export function LeadHeader({ lead, currentUserId, teamMembers = [] }: LeadHeader
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => setEditing(!editing)}
-              className="rounded-md px-3 py-1.5 text-xs font-medium text-slate-400 transition-colors hover:bg-slate-700 hover:text-white"
-            >
-              {editing ? "Cancel Edit" : "Edit"}
-            </button>
-            <ReEnrichButton leadId={lead.id} leadName={lead.name} enrichedAt={lead.enriched_at ?? null} />
-            <button
-              onClick={() => setShowAssignModal(true)}
-              className="rounded-md px-3 py-1.5 text-xs font-medium text-slate-400 transition-colors hover:bg-slate-700 hover:text-white"
-            >
-              {assignedMember ? `Assigned: ${assignedMember.full_name}` : "Assign"}
-            </button>
-            <button
-              onClick={() => setShowDeleteConfirm(true)}
-              className="rounded-md px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-900/30 hover:text-red-300"
-            >
-              Delete
-            </button>
+            {!focusMode && (
+              <>
+                <button
+                  onClick={() => setEditing(!editing)}
+                  className="rounded-md px-3 py-1.5 text-xs font-medium text-slate-400 transition-colors hover:bg-slate-700 hover:text-white"
+                >
+                  {editing ? "Cancel Edit" : "Edit"}
+                </button>
+                <ReEnrichButton leadId={lead.id} leadName={lead.name} enrichedAt={lead.enriched_at ?? null} />
+                <button
+                  onClick={() => setShowAssignModal(true)}
+                  className="rounded-md px-3 py-1.5 text-xs font-medium text-slate-400 transition-colors hover:bg-slate-700 hover:text-white"
+                >
+                  {assignedMember ? `Claimed: ${assignedMember.full_name}` : "Claim"}
+                </button>
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="rounded-md px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-900/30 hover:text-red-300"
+                >
+                  Delete
+                </button>
+              </>
+            )}
             {lead.priority && (
               <span
                 className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${
@@ -349,16 +379,16 @@ export function LeadHeader({ lead, currentUserId, teamMembers = [] }: LeadHeader
       </div>
 
       {/* Inline edit form */}
-      {editing && (
+      {!focusMode && editing && (
         <LeadEditForm lead={lead} onClose={() => setEditing(false)} />
       )}
 
       {/* Assign Modal */}
-      {showAssignModal && (
+      {!focusMode && showAssignModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
           <div className="w-full max-w-sm rounded-lg border border-slate-600 bg-slate-800 p-6">
             <h3 className="text-lg font-semibold text-white">
-              Assign {lead.name}
+              Claim {lead.name}
             </h3>
             <div className="mt-3 space-y-2">
               <button
@@ -370,7 +400,7 @@ export function LeadHeader({ lead, currentUserId, teamMembers = [] }: LeadHeader
                     <path strokeLinecap="round" strokeLinejoin="round" d="M22 10.5h-6m-2.25-4.125a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0ZM4 19.235v-.11a6.375 6.375 0 0 1 12.75 0v.109A12.318 12.318 0 0 1 10.374 21c-2.331 0-4.512-.645-6.374-1.766Z" />
                   </svg>
                 </span>
-                <span>Unassign</span>
+                <span>Unclaim</span>
               </button>
               {teamMembers.map((member) => (
                 <button
@@ -408,7 +438,7 @@ export function LeadHeader({ lead, currentUserId, teamMembers = [] }: LeadHeader
       )}
 
       {/* Delete Confirmation Modal */}
-      {showDeleteConfirm && (
+      {!focusMode && showDeleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
           <div className="w-full max-w-sm rounded-lg border border-slate-600 bg-slate-800 p-6">
             <h3 className="text-lg font-semibold text-white">Delete Lead</h3>

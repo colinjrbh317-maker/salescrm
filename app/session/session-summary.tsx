@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import type { SessionType, Goals } from "@/lib/types";
 import { OUTCOME_LABELS } from "@/lib/types";
 
@@ -25,8 +26,9 @@ export default function SessionSummary({
   bestStreak,
   goals,
 }: SessionSummaryProps) {
+  const [completedAt] = useState(() => new Date().getTime());
   const elapsed = Math.floor(
-    (Date.now() - new Date(startedAt).getTime()) / 1000
+    (completedAt - new Date(startedAt).getTime()) / 1000
   );
   const mins = Math.floor(elapsed / 60);
   const secs = elapsed % 60;
@@ -114,6 +116,55 @@ export default function SessionSummary({
           </div>
         </div>
       )}
+
+      {/* Post-session intelligence */}
+      <div className="rounded-lg border border-slate-700 bg-slate-800 p-4">
+        <h3 className="text-sm font-semibold text-slate-300 mb-3">
+          Session Intelligence
+        </h3>
+        <div className="space-y-3">
+          {/* Send rate */}
+          {mins > 0 && leadsWorked > 0 && (
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-slate-400">
+                {sessionType === "call" ? "Call" : sessionType === "email" ? "Email" : "DM"} rate
+              </span>
+              <span className="text-sm font-medium text-white">
+                {Math.round((leadsWorked / mins) * 60)}/hr
+              </span>
+            </div>
+          )}
+
+          {/* Auto-scheduled touches */}
+          {leadsWorked > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-blue-400">{"\uD83D\uDCC5"}</span>
+              <span className="text-sm text-slate-400">
+                ~{leadsWorked} follow-up touches auto-scheduled
+              </span>
+            </div>
+          )}
+
+          {/* Bounced leads tip */}
+          {(outcomes["bounced"] ?? 0) > 0 && (
+            <div className="rounded-md border border-amber-700/50 bg-amber-900/20 px-3 py-2">
+              <span className="text-xs text-amber-300">
+                {outcomes["bounced"]} emails bounced — these leads need updated email addresses
+              </span>
+            </div>
+          )}
+
+          {/* High connect rate */}
+          {(outcomes["connected"] ?? 0) > 0 && leadsWorked > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-emerald-400">{"\u2705"}</span>
+              <span className="text-sm text-slate-400">
+                Connect rate: {Math.round(((outcomes["connected"] ?? 0) / leadsWorked) * 100)}%
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Goal progress */}
       {goals && goalTarget && goalTarget > 0 && (

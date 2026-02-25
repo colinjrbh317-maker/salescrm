@@ -14,7 +14,7 @@ import {
     SidebarGroupLabel,
     SidebarGroupContent,
 } from "@/components/ui/sidebar"
-import { Home, Users, Calendar, Settings, LogOut, Briefcase } from "lucide-react"
+import { Home, Users, Calendar, Settings, LogOut, Briefcase, Send } from "lucide-react"
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { createClient } from "@/lib/supabase/client"
@@ -30,6 +30,7 @@ export function AppSidebar({ userEmail, userName }: { userEmail: string, userNam
 
     const navItems = [
         { title: "Dashboard", url: "/v2/dashboard", icon: Home },
+        { title: "Outreach", url: "/v2/outreach", icon: Send },
         { title: "Leads", url: "/v2/leads", icon: Users },
         { title: "Sessions", url: "/v2/sessions", icon: Calendar },
         { title: "Pipelines", url: "/v2/pipelines", icon: Briefcase },

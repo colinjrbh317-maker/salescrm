@@ -12,7 +12,9 @@ export default async function LeaderboardPage() {
     .select("id, full_name, role");
 
   // Get activity counts per user (last 7 days)
-  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const weekAgo = new Date(
+    new Date().getTime() - 7 * 24 * 60 * 60 * 1000
+  ).toISOString();
   const { data: activities } = await supabase
     .from("activities")
     .select("user_id, activity_type")

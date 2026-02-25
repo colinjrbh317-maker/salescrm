@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import type { Cadence, ActivityType } from "@/lib/types";
+import type { Cadence, ActivityType, Lead } from "@/lib/types";
 import { ACTIVITY_TYPE_LABELS } from "@/lib/types";
+import { detectAvailableChannels } from "@/lib/cadence-generator";
+import { CadenceBuilder } from "@/app/(dashboard)/cadences/cadence-builder";
 
 // ============================================================
 // Cadence Templates
@@ -88,16 +90,19 @@ interface CadenceManagerProps {
   leadId: string;
   currentUserId: string;
   cadences: Cadence[];
+  lead: Lead;
 }
 
 export function CadenceManager({
   leadId,
   currentUserId,
   cadences,
+  lead,
 }: CadenceManagerProps) {
   const [starting, setStarting] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showBuilder, setShowBuilder] = useState(false);
   const router = useRouter();
   const supabase = createClient();
 
@@ -137,6 +142,58 @@ export function CadenceManager({
 
     setStarting(false);
   }
+
+  // ----------------------------------------------------------
+  // Auto-generate an AI-powered cadence from lead data
+  // ----------------------------------------------------------
+
+  async function autoGenerateCadence() {
+    setStarting(true);
+    setError(null);
+
+    const available = detectAvailableChannels(lead);
+    const channelCount = Object.values(available).filter(Boolean).length;
+
+    if (channelCount === 0) {
+      setError("No contact channels found — enrich this lead first");
+      setTimeout(() => setError(null), 5000);
+      setStarting(false);
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/generate-cadence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leadId, userId: currentUserId }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Failed to generate AI cadence — try again");
+        setTimeout(() => setError(null), 5000);
+        setStarting(false);
+        return;
+      }
+
+      router.refresh();
+    } catch {
+      setError("Failed to generate AI cadence — try again");
+      setTimeout(() => setError(null), 5000);
+    }
+
+    setStarting(false);
+  }
+
+  // Available channels summary for the auto-generate button
+  const availableChannels = detectAvailableChannels(lead);
+  const channelLabels: string[] = [];
+  if (availableChannels.phone) channelLabels.push("Phone");
+  if (availableChannels.email) channelLabels.push("Email");
+  if (availableChannels.instagram) channelLabels.push("IG");
+  if (availableChannels.facebook) channelLabels.push("FB");
+  if (availableChannels.tiktok) channelLabels.push("TT");
 
   // ----------------------------------------------------------
   // Mark a step as completed
@@ -250,9 +307,35 @@ export function CadenceManager({
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-400">
           Start a Cadence
         </h2>
-        <p className="mb-4 text-sm text-slate-400">
-          Choose a cadence template to begin automated outreach scheduling for
-          this lead.
+        {/* AI-Powered Smart Cadence */}
+        <div className="mb-4 rounded-lg border border-blue-700/50 bg-blue-900/20 p-4">
+          <div className="flex items-start justify-between">
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm font-medium text-blue-300">
+                Generate Smart Cadence
+              </h3>
+              <p className="mt-0.5 text-xs text-slate-400">
+                AI-powered industry-specific cadence using{" "}
+                {channelLabels.length > 0
+                  ? channelLabels.join(", ")
+                  : "no channels detected"}
+                {lead.ai_channel_rec
+                  ? ` — AI recommends ${lead.ai_channel_rec}`
+                  : ""}
+              </p>
+            </div>
+            <button
+              onClick={autoGenerateCadence}
+              disabled={starting || channelLabels.length === 0}
+              className="ml-4 shrink-0 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {starting ? "Generating..." : "Generate Cadence"}
+            </button>
+          </div>
+        </div>
+
+        <p className="mb-3 text-xs text-slate-500">
+          Or choose a manual template:
         </p>
 
         <div className="space-y-3">
@@ -295,6 +378,28 @@ export function CadenceManager({
             </div>
           ))}
         </div>
+
+        {/* Custom Builder */}
+        {showBuilder ? (
+          <div className="mt-4">
+            <CadenceBuilder
+              leadId={leadId}
+              userId={currentUserId}
+              onSave={() => {
+                setShowBuilder(false);
+                router.refresh();
+              }}
+              onCancel={() => setShowBuilder(false)}
+            />
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowBuilder(true)}
+            className="mt-4 w-full rounded-lg border border-dashed border-slate-600 py-3 text-sm text-slate-400 transition hover:border-slate-500 hover:text-slate-300"
+          >
+            Build Custom Cadence
+          </button>
+        )}
       </div>
     );
   }

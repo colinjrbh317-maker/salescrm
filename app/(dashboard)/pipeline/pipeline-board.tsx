@@ -44,12 +44,19 @@ interface PipelineBoardProps {
   currentUserId: string;
 }
 
+type PipelineView = "my" | "all";
+
 export function PipelineBoard({ leads, currentUserId }: PipelineBoardProps) {
+  const [pipelineView, setPipelineView] = useState<PipelineView>("my");
   const [filterType, setFilterType] = useState<LeadType | "">("");
   const [filterSearch, setFilterSearch] = useState("");
 
   const visibleLeads = useMemo(() => {
     let filtered = leads;
+    // Per-user pipeline: default to "My Leads"
+    if (pipelineView === "my") {
+      filtered = filtered.filter((l) => l.assigned_to === currentUserId);
+    }
     if (filterType) filtered = filtered.filter((l) => l.lead_type === filterType);
     if (filterSearch.trim()) {
       const q = filterSearch.toLowerCase();
@@ -58,7 +65,7 @@ export function PipelineBoard({ leads, currentUserId }: PipelineBoardProps) {
       );
     }
     return filtered;
-  }, [leads, filterType, filterSearch]);
+  }, [leads, pipelineView, currentUserId, filterType, filterSearch]);
 
   const [closingLead, setClosingLead] = useState<Lead | null>(null);
   const [closeStage, setCloseStage] = useState<"closed_won" | "closed_lost">(
@@ -256,8 +263,31 @@ export function PipelineBoard({ leads, currentUserId }: PipelineBoardProps) {
         </div>
       )}
 
-      {/* Pipeline Filters */}
+      {/* Pipeline View Toggle + Filters */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
+        {/* My Leads / All Leads toggle */}
+        <div className="flex items-center rounded-md border border-slate-600 bg-slate-800">
+          <button
+            onClick={() => setPipelineView("my")}
+            className={`rounded-l-md px-3 py-2 text-xs font-medium transition-colors ${
+              pipelineView === "my"
+                ? "bg-blue-600 text-white"
+                : "text-slate-400 hover:text-white"
+            }`}
+          >
+            My Leads ({leads.filter((l) => l.assigned_to === currentUserId).length})
+          </button>
+          <button
+            onClick={() => setPipelineView("all")}
+            className={`rounded-r-md px-3 py-2 text-xs font-medium transition-colors ${
+              pipelineView === "all"
+                ? "bg-blue-600 text-white"
+                : "text-slate-400 hover:text-white"
+            }`}
+          >
+            All Leads ({leads.length})
+          </button>
+        </div>
         <input
           type="text"
           placeholder="Search pipeline..."
@@ -360,8 +390,16 @@ export function PipelineBoard({ leads, currentUserId }: PipelineBoardProps) {
                           className="cursor-grab rounded-md border border-slate-700 bg-slate-800 p-2.5 transition-colors hover:border-slate-600 active:cursor-grabbing"
                           onClick={() => router.push(`/leads/${lead.id}`)}
                         >
-                        {/* Lead name */}
+                        {/* Lead name + favicon */}
                         <div className="flex items-center gap-1.5">
+                          {lead.website && (
+                            <img
+                              src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(lead.website.replace(/^https?:\/\//, ""))}&sz=32`}
+                              alt=""
+                              className="h-4 w-4 shrink-0 rounded"
+                              loading="lazy"
+                            />
+                          )}
                           <span className="text-sm font-medium text-white">
                             {lead.name}
                           </span>

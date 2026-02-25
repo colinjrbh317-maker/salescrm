@@ -9,7 +9,7 @@ import {
     RefreshCcw,
     CheckCircle2,
     XCircle,
-    Star,
+    Zap,
     Activity
 } from "lucide-react";
 
@@ -156,7 +156,7 @@ export function SalesIntelligence({ lead }: { lead: Lead }) {
                             <div className="flex items-center gap-3">
                                 {lead.google_rating != null && (
                                     <Badge variant="secondary" className="bg-orange-500/10 text-orange-400 border-orange-500/20 gap-1 px-2 pointer-events-none">
-                                        <Star className="h-3.5 w-3.5 fill-orange-400 text-orange-400" />
+                                        <Zap className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400" />
                                         {lead.google_rating}
                                     </Badge>
                                 )}

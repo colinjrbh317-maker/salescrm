@@ -22,7 +22,9 @@ export default async function SessionPage() {
     .single<Profile>();
 
   // Clean up abandoned sessions (active for >24h)
-  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const twentyFourHoursAgo = new Date(
+    new Date().getTime() - 24 * 60 * 60 * 1000
+  ).toISOString();
   await supabase
     .from("sessions")
     .update({ status: "completed", ended_at: new Date().toISOString() })
@@ -92,7 +94,7 @@ export default async function SessionPage() {
     }
 
     return (
-      <div className="mx-auto max-w-3xl px-4 py-6">
+      <div className="h-[calc(100vh-48px)] w-full">
         <SessionWork
           session={activeSession}
           leads={leads}

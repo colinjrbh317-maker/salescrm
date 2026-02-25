@@ -2,21 +2,23 @@
 
 import { useState, type ReactNode } from "react";
 
-type Tab = "overview" | "activity" | "cadence";
+type Tab = "overview" | "activity" | "cadence" | "outreach";
 
 interface LeadDetailTabsProps {
   overview: ReactNode;
   activity: ReactNode;
   cadence: ReactNode;
+  outreach: ReactNode;
 }
 
 const TAB_CONFIG: { key: Tab; label: string }[] = [
   { key: "overview", label: "Overview" },
   { key: "activity", label: "Activity" },
   { key: "cadence", label: "Cadence" },
+  { key: "outreach", label: "Outreach" },
 ];
 
-export function LeadDetailTabs({ overview, activity, cadence }: LeadDetailTabsProps) {
+export function LeadDetailTabs({ overview, activity, cadence, outreach }: LeadDetailTabsProps) {
   const [activeTab, setActiveTab] = useState<Tab>("overview");
 
   return (
@@ -43,6 +45,7 @@ export function LeadDetailTabs({ overview, activity, cadence }: LeadDetailTabsPr
         {activeTab === "overview" && overview}
         {activeTab === "activity" && activity}
         {activeTab === "cadence" && cadence}
+        {activeTab === "outreach" && outreach}
       </div>
     </div>
   );

@@ -236,7 +236,7 @@ export function LeadAssignmentStep({
       ) : filteredLeads.length === 0 ? (
         <p className="py-8 text-center text-slate-400">
           {leads.length === 0
-            ? "No unassigned leads available right now."
+            ? "No unclaimed leads available right now."
             : "No leads match the current filters."}
         </p>
       ) : (

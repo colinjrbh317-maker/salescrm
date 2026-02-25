@@ -13,7 +13,6 @@ const TYPE_BADGE_COLORS: Record<SessionType, string> = {
 interface SessionProgressBarProps {
   currentIndex: number;
   totalLeads: number;
-  streak: number;
   sessionType: SessionType;
   startedAt: string;
 }
@@ -21,7 +20,6 @@ interface SessionProgressBarProps {
 export default function SessionProgressBar({
   currentIndex,
   totalLeads,
-  streak,
   sessionType,
   startedAt,
 }: SessionProgressBarProps) {
@@ -75,14 +73,6 @@ export default function SessionProgressBar({
         </div>
 
         <div className="flex items-center gap-4">
-          {/* Streak */}
-          {streak > 0 && (
-            <span className="flex items-center gap-1 text-orange-400 animate-pulse">
-              <span>{"\uD83D\uDD25"}</span>
-              <span className="font-bold">{streak}x</span>
-            </span>
-          )}
-
           {/* Timer */}
           <span className="font-mono text-slate-400">{elapsed}</span>
 
